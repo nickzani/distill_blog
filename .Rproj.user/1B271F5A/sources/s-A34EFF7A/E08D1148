@@ -1,0 +1,23 @@
+{
+    "collab_server" : "",
+    "contents" : "",
+    "created" : 1640336485781.000,
+    "dirty" : false,
+    "encoding" : "UTF-8",
+    "folds" : "",
+    "hash" : "59846292",
+    "id" : "E08D1148",
+    "lastKnownWriteTime" : 1640336472,
+    "last_content_update" : 1640336472,
+    "path" : "~/Documents/GitHub/distill_blog/distill_nickzani/index.Rmd",
+    "project_path" : "index.Rmd",
+    "properties" : {
+    },
+    "read_only" : false,
+    "read_only_alternatives" : [
+    ],
+    "relative_order" : 2,
+    "source_on_save" : false,
+    "source_window" : "",
+    "type" : "r_markdown"
+}
