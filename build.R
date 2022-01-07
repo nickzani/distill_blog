@@ -1,7 +1,21 @@
 library(distill)
 library(rmarkdown)
 
-create_blog(dir = "nickzani", title = "My Blog")
-render_site()
+create_blog(title = "My Blog", dir = "~")
 
-create_post("Advent of Code: Day 1")
+create_post("Tidy Tuesday: Week 1 2022")
+
+library(dplyr)
+library(readr)
+library(tibble)
+library(stringr)
+
+as_tibble(read_lines(file = "./_data/apple_health.xml")) %>%
+  filter(str_detect(value, 'StepCount')) %>%
+  filter(str_detect(value, 'Apple Watch')) %>%
+  mutate(value = trimws(value)) %>%
+  mutate(value = str_remove_all(value, 'HKDevice: [0-9a-zA-Z]+')) %>%
+  mutate(value = str_remove_all(value, 'model:Watch, hardware:Watch5,9, ')) %>%
+  write.csv(file = "./_data/apple_health_extract.xml", 
+            row.names = FALSE, 
+            col.names = NA)

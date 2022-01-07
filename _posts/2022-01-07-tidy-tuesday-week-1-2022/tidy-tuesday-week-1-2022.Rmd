@@ -1,0 +1,104 @@
+---
+title: "Tidy Tuesday: Week 1 2022"
+description: |
+  Bring your own data: When are the twins waking up?
+author:
+  - name: Nick Zani
+    url: https://example.com/norajones
+date: 2022-01-07
+output:
+  distill::distill_article:
+    self_contained: false
+---
+
+### Introduction
+
+The theme for Tidy Tuesday week 1 was bring your own data. For a while I have had a feeling that our just-turned-two year old twins have been waking up earlier and earlier, so I decided to use my Apple watch step data to try and prove this. 
+
+![](https://media3.giphy.com/media/8juzBtKJhYAVi/giphy.gif)
+
+### Data
+
+The Apple health data can be exported via the health app as an xml file. By filtering on the step count and Apple watch flag we can extract the date and time using str_match. We will assume that if there were steps in the hours between midnight and 5am it was because of (at least one of) the twins waking up.
+
+```{r eval=TRUE}
+library(dplyr)
+library(readr)
+library(tibble)
+library(stringr)
+library(ggplot2)
+library(scales)
+
+steps <- as_tibble(read_lines(file = "../../_data/apple_health_extract.xml")) %>%
+  filter(str_detect(value, 'StepCount')) %>%
+  filter(str_detect(value, 'Apple Watch')) %>%
+  mutate(creation_dt = as.Date(str_match(value, 'creationDate=\\"\\"(\\d+-\\d+-\\d+) \\d+:\\d+:\\d+')[,2]),
+         creation_hr = as.numeric(str_match(value, 'creationDate=\\"\\"\\d+-\\d+-\\d+ (\\d+):\\d+:\\d+')[,2])
+         )
+```
+
+Now we will filter for the last few months, extract the day of the week and group the wakeup times. Finally we will merge on the counts by month so we can get a percentage, to take account of the fact that different months are different length, and on some occasions my watch was charging.
+
+```{r eval=TRUE}
+aggregated_steps <- steps %>%
+  filter(creation_dt >= as.Date("2021-04-01") & creation_dt <= as.Date("2021-12-31")) %>%
+  select(-value) %>%
+  distinct() %>%
+  mutate(weekday_name = strftime(creation_dt,'%a'),
+         weekday_num = as.numeric(strftime(creation_dt,'%u')),
+         month_name = strftime(creation_dt,'%b'),
+         month_num = as.numeric(strftime(creation_dt,'%m'))
+         ) %>%
+  mutate(grouping = case_when(creation_hr %in% c(0,1) ~ "0 - 1am",
+                              creation_hr %in% c(2,3) ~ "2 - 3am",
+                              creation_hr %in% c(4,5) ~ "4 - 5am"
+                              )
+         ) %>%
+  filter(!is.na(grouping)) %>%
+  group_by(month_name, month_num, grouping) %>%
+  summarise(cnt = n()) %>%
+  ungroup()
+
+monthly_cnts <- aggregated_steps %>%
+  group_by(month_name, month_num) %>%
+  summarise(mthly_total = sum(cnt))
+
+percentages <- aggregated_steps %>%
+  inner_join(monthly_cnts) %>%
+  mutate(percent_wakeups = cnt/mthly_total)
+
+```
+
+### Visualisation
+
+Now we have the data in tidy form we can pass to ggplot to visualise. This confirms my theory that the twins have been waking up earlier and earlier, with a big change in November, where over half the wakeups were before 4am!
+
+```{r echo=FALSE, fig.width = 10, fig.height = 6}
+percentages %>%
+  ggplot(aes(x = reorder(month_name, month_num),
+             y = percent_wakeups,
+             fill = grouping)
+         ) +
+  geom_col() +
+  theme_void() +
+  scale_y_continuous(labels = scales::percent) +
+  labs(title = "When Are the Twins Waking Up?", 
+       subtitle = "Percentage of Wakeups by Time, by Month\n",
+       x = "",
+       y = "",
+       fill = "Wakeup Time",
+       caption = "\nNick Zani | @nickzani") +
+  scale_fill_brewer(palette = 3) +
+  theme(strip.text = element_text(size = 18),
+        axis.title = element_text(size = 14),
+        axis.text.x = element_text(size = 14),
+        axis.text.y = element_text(size = 18),
+        plot.title = element_text(size = 18),
+        plot.subtitle = element_text(size = 14),
+        plot.caption = element_text(size = 12),
+        legend.text = element_text(size = 16),
+        legend.title = element_text(size = 18)
+  )
+
+  
+```
