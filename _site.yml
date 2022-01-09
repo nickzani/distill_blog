@@ -3,6 +3,7 @@ title: "Nick Zani"
 description: |
   My Blog
 output_dir: "_site"
+google_analytics: "G-82CBHYVKKF"
 navbar:
   right:
     - text: "Home"
