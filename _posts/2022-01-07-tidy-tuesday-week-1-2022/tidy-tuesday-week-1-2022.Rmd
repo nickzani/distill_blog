@@ -13,7 +13,7 @@ output:
 
 ### Introduction
 
-The theme for Tidy Tuesday week 1 was bring your own data. For a while I have had a feeling that our just-turned-two year old twins have been waking up earlier and earlier, so I decided to use my Apple watch step data to try and prove this. 
+The theme for Tidy Tuesday week 1 was bring your own data. For a while I have had a feeling that our just-turned-two year old twins have been waking up earlier and earlier, so I decided to use my Apple watch step data to try to prove this. 
 
 ![](https://media3.giphy.com/media/8juzBtKJhYAVi/giphy.gif)
 
@@ -73,7 +73,7 @@ percentages <- aggregated_steps %>%
 
 Now we have the data in tidy form we can pass to ggplot to visualise. This confirms my theory that the twins have been waking up earlier and earlier, with a big change in November, where over half the wakeups were before 4am!
 
-```{r echo=FALSE, fig.width = 10, fig.height = 6}
+```{r fig.width = 10, fig.height = 6}
 percentages %>%
   ggplot(aes(x = reorder(month_name, month_num),
              y = percent_wakeups,

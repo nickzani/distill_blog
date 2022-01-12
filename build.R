@@ -3,12 +3,16 @@ library(rmarkdown)
 
 create_blog(title = "My Blog", dir = "~")
 
-create_post("Tidy Tuesday: Week 1 2022")
+create_post("Tidy Tuesday: Week 2 2022")
 
 library(dplyr)
 library(readr)
 library(tibble)
 library(stringr)
+
+file.copy("C:/Users/vi2073/Documents/GitHub/distill_blog/distill_nickzani/_site", 
+          "C:/Users/vi2073/Documents/GitHub/nickzani.github.io/blog",
+          recursive = TRUE)
 
 as_tibble(read_lines(file = "./_data/apple_health.xml")) %>%
   filter(str_detect(value, 'StepCount')) %>%

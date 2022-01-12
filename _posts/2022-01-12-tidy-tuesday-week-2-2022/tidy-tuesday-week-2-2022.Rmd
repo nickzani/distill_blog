@@ -1,0 +1,95 @@
+---
+title: "Tidy Tuesday: Week 2 2022"
+description: |
+  Testing Out the geomtextpath Package.
+author:
+  - name: Nick Zani
+date: 2022-01-12
+output:
+  distill::distill_article:
+    self_contained: false
+---
+
+
+### Introduction
+
+I've wanted to try out the [geomtextpath](https://github.com/AllanCameron/geomtextpath) package for a while so thought I would use this week's Tidy Tuesday data on bees to give it a go.
+
+![](https://media.giphy.com/media/TJBbXQooivUNq/giphy.gif){width=40%}
+
+
+### Data
+
+Not a huge amount of work required to tidy this up, just a few tweaks to dates and percentages
+
+```{r eval=TRUE}
+library(tibble)
+library(dplyr)
+library(stringr)
+library(readr)
+library(tidyr)
+library(janitor)
+library(ggplot2)
+
+colony <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2022/2022-01-11/colony.csv')
+stressor <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2022/2022-01-11/stressor.csv')
+
+stressor_clean <- stressor %>% 
+  mutate(stress_pct = stress_pct/100) %>%
+  mutate(month_num = case_when(months == "January-March" ~ 1,
+                               months == "April-June" ~ 4,
+                               months == "July-September" ~ 7,
+                               months == "October-December" ~ 10,)) %>%
+  mutate(year_mon = as.Date(paste0(year, "-", str_pad(month_num, 2, side = "left", pad = 0), "-01")),
+         formatted_dt = format(year_mon, "%b-%y"))
+
+```
+
+### Visualisation
+
+Download the package from Github:
+
+```{r eval=FALSE}
+library(remotes)
+remotes::install_github("AllanCameron/geomtextpath")
+```
+
+Plot the graph:
+
+```{r fig.width = 7, fig.height = 6}
+library(geomtextpath)
+
+stressor_clean %>%
+  filter(state == "Texas") %>%
+  filter(stressor != "Unknown") %>%
+  filter(stressor != "Other") %>%
+  ggplot(aes(x = year_mon, y = stress_pct, colour = stressor)) +
+    geom_point(alpha = 0.3,
+               size = 2) +
+    geom_textsmooth(aes(label = stressor, colour = stressor),
+                    method = "loess", 
+                    formula = y ~ x,
+                    size = 5, 
+                    linetype = 3, 
+                    fontface = 2, 
+                    linewidth = 1.5)+
+  scale_colour_brewer(type = "qual", palette = 2) +
+  theme_classic() +
+  scale_y_continuous(labels = scales::percent_format(accuracy=1)) +
+  labs(title = "Stressor Impact on Texas Bee Colonies", 
+       subtitle = "Unknown and Other Stressors Removed\n",
+       x = "",
+       y = "Percent of Colonies Affected\n",
+       caption = "\nNick Zani | @nickzani") +
+  theme(strip.text = element_text(size = 18),
+        axis.title = element_text(size = 14),
+        axis.text.x = element_text(size = 14),
+        axis.text.y = element_text(size = 18),
+        plot.title = element_text(size = 18),
+        plot.subtitle = element_text(size = 14),
+        plot.caption = element_text(size = 12),
+        legend.text = element_text(size = 16),
+        legend.title = element_text(size = 18),
+        legend.position = "none"
+  )
+```
