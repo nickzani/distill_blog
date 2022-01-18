@@ -20,7 +20,7 @@ I've wanted to try out the [geomtextpath](https://github.com/AllanCameron/geomte
 
 ### Data
 
-Not a huge amount of work required to tidy this up, just a few tweaks to dates and percentages
+Not a huge amount of work required to tidy this up, just a few tweaks to dates and percentages, and fix the spelling on diseases
 
 ```{r eval=TRUE}
 library(tibble)
@@ -41,7 +41,8 @@ stressor_clean <- stressor %>%
                                months == "July-September" ~ 7,
                                months == "October-December" ~ 10,)) %>%
   mutate(year_mon = as.Date(paste0(year, "-", str_pad(month_num, 2, side = "left", pad = 0), "-01")),
-         formatted_dt = format(year_mon, "%b-%y"))
+         formatted_dt = format(year_mon, "%b-%y")) %>%
+  mutate(stressor = str_replace(stressor, "Disesases", "Diseases"))
 
 ```
 
@@ -66,13 +67,14 @@ stressor_clean %>%
   ggplot(aes(x = year_mon, y = stress_pct, colour = stressor)) +
     geom_point(alpha = 0.3,
                size = 2) +
-    geom_textsmooth(aes(label = stressor, colour = stressor),
+    geom_textsmooth(aes(label = stressor, colour = stressor, hjust = stressor),
                     method = "loess", 
                     formula = y ~ x,
                     size = 5, 
                     linetype = 3, 
                     fontface = 2, 
-                    linewidth = 1.5)+
+                    linewidth = 1.5) +
+  scale_hjust_discrete() +
   scale_colour_brewer(type = "qual", palette = 2) +
   theme_classic() +
   scale_y_continuous(labels = scales::percent_format(accuracy=1)) +

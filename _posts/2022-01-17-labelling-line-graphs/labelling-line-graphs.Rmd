@@ -1,0 +1,146 @@
+---
+title: "Tidying up Line Graphs"
+description: |
+  Using ggborderline and secondary axis labels.
+author:
+  - name: Nick Zani
+    url: {}
+date: 2022-01-17
+output:
+  distill::distill_article:
+    self_contained: false
+---
+
+### Introduction
+
+Last week I had a play around with the [geomtextpath](https://github.com/AllanCameron/geomtextpath) package, and this week I wanted to expand on that with [ggborderline](https://wurli.github.io/ggborderline/), again using some Tidy Tuesday data from October 2021 on the number of nurse numbers in different American states.
+
+### Data
+No data manipulation to be done here, just import and filter the data for some selected states. I chose states which had similar numbers so that some of the lines in the plots would cross over later.
+
+```{r eval=TRUE}
+library(tibble)
+library(dplyr)
+library(stringr)
+library(readr)
+library(tidyr)
+library(janitor)
+library(ggplot2)
+
+nurses <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2021/2021-10-05/nurses.csv')
+
+
+nurses_filtered <- nurses %>%
+  clean_names() %>%
+  filter(state %in% c("Alabama", "Arizona", "Oregon", "Iowa"))
+
+```
+
+### Initial Visualisation
+
+The off-the-shelf ggplot looks fine, but there are definitely some improvements we can make.  
+
+```{r fig.width = 7, fig.height = 6}
+
+nurses_filtered %>%
+  ggplot(aes(x = year, y = total_employed_rn, group = state, colour = state)) +
+  geom_line(size = 2) +
+  scale_colour_brewer(type = "qual", palette = 2) +
+  theme_classic() +
+  scale_y_continuous(labels = scales::comma_format()) +
+  labs(title = "Nurse Numbers in Selected States", 
+       subtitle = "Standard ggplot\n",
+       colour = "State",
+       x = "",
+       y = "Count of Nurses\n",
+       caption = "\nNick Zani | @nickzani") +
+  theme(strip.text = element_text(size = 18),
+        axis.title = element_text(size = 14),
+        axis.text.x = element_text(size = 14),
+        axis.text.y = element_text(size = 18),
+        plot.title = element_text(size = 18),
+        plot.subtitle = element_text(size = 14),
+        plot.caption = element_text(size = 12),
+        legend.text = element_text(size = 16),
+        legend.title = element_text(size = 18)
+  )
+
+```
+
+### Using ggborderline
+
+The [ggborderline](https://wurli.github.io/ggborderline/) is a great package for tidying up line graphs where the lines overlap. It adds in a white border to the lines which can be tweaked in thickness
+
+```{r fig.width = 7, fig.height = 6}
+
+library(ggborderline)
+
+nurses_filtered %>%
+  ggplot(aes(x = year, y = total_employed_rn, group = state, colour = state)) +
+  geom_borderline(size = 2, bordersize = 0.75) +
+  scale_colour_brewer(type = "qual", palette = 2) +
+  theme_classic() +
+  scale_y_continuous(labels = scales::comma_format()) +
+  labs(title = "Nurse Numbers in Selected States", 
+       subtitle = "With ggborderline\n",
+       colour = "State",
+       x = "",
+       y = "Count of Nurses\n",
+       caption = "\nNick Zani | @nickzani") +
+  theme(strip.text = element_text(size = 18),
+        axis.title = element_text(size = 14),
+        axis.text.x = element_text(size = 14),
+        axis.text.y = element_text(size = 18),
+        plot.title = element_text(size = 18),
+        plot.subtitle = element_text(size = 14),
+        plot.caption = element_text(size = 12),
+        legend.text = element_text(size = 16),
+        legend.title = element_text(size = 18)
+  )
+
+```
+
+### Improving the Labels
+
+The final tweak is to fix the labels. The legend is not in order, and makes the graph harder to read. By adding a secondary axis in, we can simplify this. The trick is to create a second dataframe which contains just the labels at the maximum values. 
+
+```{r fig.width = 7, fig.height = 6, preview=TRUE}
+
+library(ggborderline)
+
+max_y_value <- nurses_filtered %>%
+  filter(year == max(year))
+
+nurses_filtered %>%
+  ggplot(aes(x = year, 
+             y = total_employed_rn, 
+             group = state, 
+             colour = state)) +
+  geom_borderline(size = 2, bordersize = 0.75) +
+  scale_colour_brewer(type = "qual", palette = 2) +
+  theme_classic() +
+  scale_y_continuous(labels = scales::comma_format(),
+                     sec.axis = dup_axis(breaks = max_y_value$total_employed_rn,
+                                         labels = max_y_value$state,
+                                         name = "")) +
+  labs(title = "Nurse Numbers in Selected States", 
+       subtitle = "With ggborderline + secondary axis labelling\n",
+       colour = "State",
+       x = "",
+       y = "Count of Nurses\n",
+       caption = "\nNick Zani | @nickzani") +
+  theme(strip.text = element_text(size = 18),
+        axis.title = element_text(size = 14),
+        axis.text.x = element_text(size = 14),
+        axis.text.y = element_text(size = 18),
+        plot.title = element_text(size = 18),
+        plot.subtitle = element_text(size = 14),
+        plot.caption = element_text(size = 12),
+        legend.text = element_text(size = 16),
+        legend.title = element_text(size = 18),
+        legend.position = "none",
+        axis.line.y.right = element_line(color = "white"),
+        axis.ticks.y.right = element_line(color = "white")
+  )
+
+```
