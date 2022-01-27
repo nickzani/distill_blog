@@ -5,15 +5,15 @@
       "title": "About this blog",
       "description": "Some additional details about the blog",
       "author": [],
-      "contents": "\r\n\r\n\r\n\r\n",
-      "last_modified": "2022-01-09T19:35:50+00:00"
+      "contents": "\r\nThis blog is built using the distill package. The homepage is built using the postcards package.\r\n\r\n\r\n\r\n",
+      "last_modified": "2022-01-19T11:05:23+00:00"
     },
     {
       "path": "index.html",
       "title": "My Blog",
       "author": [],
       "contents": "\r\n\r\n\r\n\r\n",
-      "last_modified": "2022-01-09T19:35:56+00:00"
+      "last_modified": "2022-01-18T09:50:15+00:00"
     }
   ],
   "collections": ["posts/posts.json"]

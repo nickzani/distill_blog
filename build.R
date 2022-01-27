@@ -3,7 +3,7 @@ library(rmarkdown)
 
 create_blog(title = "My Blog", dir = "~")
 
-create_post("Tidy Tuesday: Week 2 2022")
+create_post("Showing Averages Within Large Datsets")
 
 library(dplyr)
 library(readr)

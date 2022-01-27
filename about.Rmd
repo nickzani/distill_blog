@@ -4,6 +4,4 @@ description: |
   Some additional details about the blog
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE)
-```
+This blog is built using the [distill package](https://rstudio.github.io/distill/blog.html). The [homepage](www.nickzani.co.uk) is built using the [postcards](https://github.com/seankross/postcards) package.

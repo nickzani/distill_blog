@@ -1,0 +1,103 @@
+---
+title: "Showing Averages Within Large Datsets"
+description: |
+  Using the geomborderline package to make averages jump out.
+author:
+  - name: Nick Zani
+    url: {}
+date: 2022-01-25
+output:
+  distill::distill_article:
+    self_contained: false
+---
+
+### Introduction
+
+Last week I used the [ggborderline package](https://wurli.github.io/ggborderline/) to tidy up line graphs. This week I used the same data again to try and show how the average has changed over time, while still showing the overall distribution.
+
+### Data
+
+I chose 15 states from the Tidy Tuesday data on the number of nurses employed in each US state by month. I then created three more data frames. One showing the max and min values by year, one showing the average, and one for the final labels.
+
+```{r eval=TRUE}
+library(tibble)
+library(dplyr)
+library(stringr)
+library(readr)
+library(tidyr)
+library(janitor)
+library(ggplot2)
+
+nurses <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2021/2021-10-05/nurses.csv') %>%
+  clean_names()
+
+states <- nurses %>%
+  filter(year == min(year)) %>%
+  arrange(total_employed_rn) %>%
+  head(30) %>%
+  tail(15) %>%
+  pull(state)
+
+nurses_filtered <- nurses %>%
+  filter(state %in% states)
+
+max_min <- nurses_filtered %>%
+  group_by(year) %>%
+  summarise(min_employed = min(total_employed_rn, na.rm = TRUE),
+            max_employed = max(total_employed_rn, na.rm = TRUE))
+
+averages <- nurses_filtered %>%
+  group_by(year) %>%
+  summarise(mean_employed = mean(total_employed_rn, na.rm = TRUE),
+            median_employed = median(total_employed_rn, na.rm = TRUE))
+
+labels <- averages %>%
+  ungroup() %>%
+  filter(year == max(year)) %>%
+  mutate(label = "Median")
+
+```
+
+### Building Up the Plot
+
+The plot is made up of four parts:
+- The ribbon between the maximum and minimum points, with the colour defined in the fill option
+- The line of each individual state
+- The average line, passed to geom_borderline so it jumps out against the other lines
+- The secondary axis for labelling
+
+```{r fig.width = 8, fig.height = 6}
+
+library(ggborderline)
+
+ggplot(max_min, aes(year)) +
+  geom_ribbon(aes(ymin = min_employed - 200, ymax = max_employed + 200), fill = "snow2") +
+  geom_line(data = nurses_filtered, aes(x = year, y = total_employed_rn, group = state), colour = "grey 75", size = 1) +
+  geom_borderline(data = averages, aes(x = year, y = median_employed), size = 2, bordersize = 1.5, colour = "royalblue4") +
+  theme_classic() +
+  scale_y_continuous(labels = scales::comma_format(),
+                     sec.axis = dup_axis(breaks = labels$median_employed,
+                                         labels = labels$label,
+                                         name = "")) +
+  scale_x_continuous(expand = expansion(mult = c(0.05, 0.01))) +
+  labs(title = "Nurse Numbers in Selected States", 
+       subtitle = "geom_ribbon + geom_borderline\n",
+       x = "",
+       y = "Count of Nurses\n",
+       caption = "\nNick Zani | @nickzani") +
+  theme(strip.text = element_text(size = 18),
+        axis.title = element_text(size = 14, colour = "grey 15"),
+        axis.text.x = element_text(size = 18),
+        axis.text.y = element_text(size = 18),
+        plot.title = element_text(size = 18, colour = "grey 15"),
+        plot.subtitle = element_text(size = 14, colour = "grey 15"),
+        plot.caption = element_text(size = 12, colour = "grey 15"),
+        legend.text = element_text(size = 16),
+        legend.title = element_text(size = 18),
+        legend.position = "none",
+        axis.line.y.right = element_line(color = "white"),
+        axis.ticks.y.right = element_line(color = "white"),
+        axis.text.y.right = element_text(color = "royalblue4")
+  )
+
+```
