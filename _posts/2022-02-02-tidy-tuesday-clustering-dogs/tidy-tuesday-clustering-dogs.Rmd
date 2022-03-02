@@ -1,0 +1,43 @@
+---
+title: "Tidy Tuesday: Clustering Dogs"
+description: |
+  Using PCA.
+author:
+  - name: Nick Zani
+    url: {}
+date: 2022-02-02
+output:
+  distill::distill_article:
+    self_contained: false
+---
+
+```{r eval=TRUE}
+library(tibble)
+library(dplyr)
+library(stringr)
+library(readr)
+library(tidyr)
+library(janitor)
+library(ggplot2)
+
+breed_traits <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2022/2022-02-01/breed_traits.csv') %>%
+  clean_names()
+trait_description <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2022/2022-02-01/trait_description.csv') %>%
+  clean_names()
+breed_rank_all <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2022/2022-02-01/breed_rank.csv') %>%
+  clean_names()
+
+top_breeds_2020 <- breed_rank_all %>%
+  filter(x2020_rank < 71) %>%
+  select(breed)
+
+breed_filtered <- breed_traits %>%
+  select(-coat_type,
+         -coat_length)
+
+pca_breed <- prcomp(breed_filtered[-1])
+summary(pca_breed)
+
+pca_transform <- as.data.frame(-pca_breed$x[,1:4])
+
+```

@@ -3,7 +3,7 @@ library(rmarkdown)
 
 create_blog(title = "My Blog", dir = "~")
 
-create_post("Showing Averages Within Large Datsets")
+create_post("Corner Distributions in the EPL: Part 1")
 
 library(dplyr)
 library(readr)

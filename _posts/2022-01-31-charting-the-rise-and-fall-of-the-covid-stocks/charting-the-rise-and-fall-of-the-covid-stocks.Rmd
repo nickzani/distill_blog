@@ -1,0 +1,92 @@
+---
+title: "Charting the Rise and Fall of the Covid Stocks"
+description: |
+  A short description of the post.
+author:
+  - name: Nick Zani
+    url: {}
+date: 2022-01-31
+output:
+  distill::distill_article:
+    self_contained: false
+---
+
+
+```{r eval=TRUE}
+library(tibble)
+library(dplyr)
+library(quantmod)
+library(readr)
+library(tidyr)
+library(janitor)
+library(ggplot2)
+library(stringr)
+
+# Data Range
+sdate <- as.Date("2020-03-01")
+edate <- as.Date("2022-01-31")
+ 
+# pull data function
+
+get_stock_data <- function(symbol, startdate, enddate){
+  
+  getSymbols(symbol, from=startdate, to=enddate, auto.assign = FALSE) %>%
+    as.data.frame() %>%
+    clean_names() %>%
+    rownames_to_column() %>%
+    select(c(1,7)) %>%
+    rename(dt = 1,
+           daily_ave = 2) %>%
+    mutate(symbol = str_remove(symbol, "\\.L"))
+  
+}
+
+covid_stock_data <- bind_rows(get_stock_data("ODX.L", sdate, edate), 
+                              get_stock_data("NCYT.L", sdate, edate))
+
+```
+
+Now create a baseline price
+
+```{r eval=TRUE}
+
+march_benchmark <- covid_stock_data %>%
+  filter(dt == min(dt)) %>%
+  select(symbol, daily_ave) %>%
+  rename(baseline = 2)
+ 
+merged_baseline <- covid_stock_data %>%
+  inner_join(march_benchmark, by = c("symbol")) %>%
+  mutate(perc_change = (daily_ave-baseline)/baseline,
+         dt = as.Date(dt))
+
+```
+
+```{r eval=TRUE}
+
+library(ggborderline)
+
+ggplot(merged_baseline, aes(x = dt, y = perc_change, group = symbol, colour = symbol)) +
+  geom_borderline() +
+  theme_classic() +
+  labs(title = "Covid Stocks", 
+       subtitle = "geom_ribbon + geom_borderline\n",
+       x = "",
+       y = "Count of Nurses\n",
+       caption = "\nNick Zani | @nickzani") +
+  theme(strip.text = element_text(size = 18),
+        axis.title = element_text(size = 14, colour = "grey 15"),
+        axis.text.x = element_text(size = 18),
+        axis.text.y = element_text(size = 18),
+        plot.title = element_text(size = 18, colour = "grey 15"),
+        plot.subtitle = element_text(size = 14, colour = "grey 15"),
+        plot.caption = element_text(size = 12, colour = "grey 15"),
+        legend.text = element_text(size = 16),
+        legend.title = element_text(size = 18),
+        legend.position = "none",
+        axis.line.y.right = element_line(color = "white"),
+        axis.ticks.y.right = element_line(color = "white"),
+        axis.text.y.right = element_text(color = "royalblue4")
+  )
+
+```
