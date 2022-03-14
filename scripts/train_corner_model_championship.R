@@ -10,30 +10,25 @@ library(caret)
 library(gbm)
 library(pROC)
 
-future_games <- data.frame(home_team = c("Chelsea", "Everton", "Leeds", "Southampton", "West Ham", "Arsenal"),
-                           away_team = c("Newcastle", "Wolves", "Norwich", "Watford", "Aston Villa", "Leicester"),
-                           date = c("13/03/2022"))
-
-epl_2021_22 <- readr::read_csv('https://www.football-data.co.uk/mmz4281/2122/E0.csv') %>%
+epl_2021_22 <- readr::read_csv('https://www.football-data.co.uk/mmz4281/2122/E1.csv') %>%
   clean_names() %>%
-  bind_rows(future_games) %>%
   mutate(date = as.Date(date, format="%d/%m/%Y"),
          match_id = 1000 + row_number(),
          season_id = 2022)
 
-epl_2020_21 <- readr::read_csv('https://www.football-data.co.uk/mmz4281/2021/E0.csv') %>%
+epl_2020_21 <- readr::read_csv('https://www.football-data.co.uk/mmz4281/2021/E1.csv') %>%
   clean_names() %>%
   mutate(date = as.Date(date, format="%d/%m/%Y"),
          match_id = 2000 + row_number(),
          season_id = 2021)
 
-epl_2019_20 <- readr::read_csv('https://www.football-data.co.uk/mmz4281/1920/E0.csv') %>%
+epl_2019_20 <- readr::read_csv('https://www.football-data.co.uk/mmz4281/1920/E1.csv') %>%
   clean_names() %>%
   mutate(date = as.Date(date, format="%d/%m/%Y"),
          match_id = 3000 + row_number(),
          season_id = 2020)
 
-epl_2018_19 <- readr::read_csv('https://www.football-data.co.uk/mmz4281/1819/E0.csv') %>%
+epl_2018_19 <- readr::read_csv('https://www.football-data.co.uk/mmz4281/1819/E1.csv') %>%
   clean_names() %>%
   mutate(date = as.Date(date, format="%d/%m/%Y"),
          match_id = 4000 + row_number(),
@@ -41,6 +36,10 @@ epl_2018_19 <- readr::read_csv('https://www.football-data.co.uk/mmz4281/1819/E0.
 
 all_data <- bind_rows(epl_2021_22, epl_2020_21, epl_2019_20, epl_2018_19) %>%
   mutate(home_corner_winner = case_when(hc > ac ~ 1, TRUE ~ 0))
+
+# whats the home/away breakdown
+
+all_data %>% group_by(home_corner_winner) %>% count()
 
 # split up and then stick back together
 
@@ -88,7 +87,7 @@ hc_model_data2 <- home_data %>%
          lag_2_home_corners_conceded = lag(corners_conceded, n = 2),
          lag_3_home_corners_conceded = lag(corners_conceded, n = 3)) %>%
   ungroup() %>%
-  filter(!is.na(lag_3_home_corner)) %>%
+  na.omit() %>%
   select(match_id, starts_with("lag_"))
 
 ac_model_data2 <- away_data %>%
@@ -107,7 +106,7 @@ ac_model_data2 <- away_data %>%
          lag_2_away_corners_conceded = lag(corners_conceded, n = 2),
          lag_3_away_corners_conceded = lag(corners_conceded, n = 3)) %>%
   ungroup() %>%
-  filter(!is.na(lag_3_away_corner)) %>%
+  na.omit() %>%
   select(match_id, starts_with("lag_"))
 
 # merge back together
@@ -117,48 +116,76 @@ model_dat <- all_data %>%
   inner_join(hc_model_data2, by = c("match_id")) %>%
   inner_join(ac_model_data2, by = c("match_id"))
 
-# get pred file
+############################
+# model
+############################
 
-to_predict <- all_data %>%
-  filter(is.na(div)) %>%
-  select(home_team, away_team, date, match_id) %>%
-  inner_join(model_dat)
+# Define the partition (e.g. 75% of the data for training)
+trainIndex <- createDataPartition(model_dat$match_id, p = .75, 
+                                  list = FALSE, 
+                                  times = 1)
 
-# predict
+# Split the dataset using the defined partition
+train_data <- model_dat[trainIndex, ,drop=FALSE]
+tune_plus_val_data <- model_dat[-trainIndex, ,drop=FALSE]
 
-modelFitWinner <- readRDS(file = "C:/Users/vi2073/Documents/GitHub/distill_blog/distill_nickzani/scripts/model.RDS")
+train_data <- train_data %>% select(-match_id)
 
-predicted_winner <- as.data.frame(predict(modelFitWinner, newdata = to_predict, "prob"))
+objControl <- trainControl(method = 'cv',number = 3, sampling = "up")
+myTuning <- expand.grid(n.trees = c(2000), 
+                        interaction.depth = c(10), 
+                        shrinkage = c(0.001), 
+                        n.minobsinnode = c(4))
 
-to_predict$prob_home_winner <- predicted_winner$`1`
 
-to_predict <- to_predict %>%
-  select(home_team, away_team, date, prob_home_winner) %>%
-  mutate(prob_away_win = 1-prob_home_winner,
-         odds_home_win = 1+((1-prob_home_winner)/prob_home_winner),
-         odds_away_win = 1+((1-prob_away_win)/prob_away_win),
-         home_odds_plus_10perc = odds_home_win * 1.1,
-         away_odds_plus_10perc = odds_away_win * 1.1)
 
-write.csv(to_predict, file = "scripts/corneroutput.csv", row.names = FALSE)
+modelFitWinner <- train(as.factor(home_corner_winner) ~ .,
+                        data=train_data,
+                        method="gbm",
+                        trControl = objControl,
+                        tuneGrid = myTuning,
+                        distribution="bernoulli",
+                        verbose=TRUE)
+# predict here
 
-## read in the tracker
+predicted_winner <- as.data.frame(predict(modelFitWinner, newdata = tune_plus_val_data, "prob"))
 
-tracker <- read_csv("scripts/tracker.csv") %>% clean_names()
+tune_plus_val_data$probwinner <- predicted_winner$`1`
+tune_plus_val_data$predwinner <- ifelse(predicted_winner$`1` > predicted_winner$`0`, 1, 0)
+tune_plus_val_data$correct <- ifelse(tune_plus_val_data$home_corner_winner == tune_plus_val_data$predwinner, 1, 0)
 
-tracker <- tracker %>%
-  filter(bet %in% c("H", "A")) %>%
-  mutate(p_and_l = case_when(winner == "N" ~ bet_amt * -1,
-                             winner == "Y" ~ bet_amt * (odds -1))) %>%
-  mutate(betid = row_number()) %>%
-  mutate(prob_used = case_when(bet == "H" ~ prob_home_winner,
-                               bet == "A" ~ prob_away_win))%>%
-  mutate(expected_value = (bet_amt * (odds - 1) * prob_used) - (bet_amt * (1 - prob_used))) %>%
-  mutate(cumulative_pl = cumsum(p_and_l),
-         cumulative_ev = cumsum(expected_value))
+sum(tune_plus_val_data$correct)/nrow(tune_plus_val_data)
 
-ggplot(tracker) +
-  geom_line(aes(x = betid, y = cumulative_pl), size = 2, colour = "dodgerblue") +
-  geom_line(aes(x = betid, y = cumulative_ev), size = 2, colour = "black")
-  
-  
+roccurve <- roc(tune_plus_val_data$home_corner_winner ~ tune_plus_val_data$probwinner)
+auc(roccurve)
+plot(roccurve)
+
+mycoords <- coords(roccurve, "all")
+
+plot(mycoords[,"threshold"], mycoords[,"specificity"], type="l", col="red", xlab="Cutoff", ylab="Performance")
+lines(mycoords[,"threshold"], mycoords[,"sensitivity"], type="l", col="blue")
+legend(100, 0.4, c("Specificity", "Sensitivity"), 
+       col=c("red", "blue"), lty=1)
+
+coords(roccurve, "best", best.method="youden")
+
+best.coords <- coords(roccurve, "best", best.method="youden")
+abline(v=best.coords["threshold"], lty=2, col="grey")
+abline(h=best.coords["specificity"], lty=2, col="red")
+abline(h=best.coords["sensitivity"], lty=2, col="blue")
+
+round_any = function(x, accuracy, f=round){f(x/ accuracy) * accuracy}
+
+tune_plus_val_data %>%
+  mutate(rounded_prob = round_any(probwinner, 0.05)) %>%
+  group_by(rounded_prob) %>%
+  summarise(cnt = n(),
+            winners = sum(home_corner_winner),
+            perc_correct = winners/cnt) %>%
+  ungroup() %>%
+  filter(rounded_prob > 0.25) %>%
+  ggplot() +
+  geom_point(aes(x = rounded_prob, y = perc_correct)) +
+  geom_abline(intercept=0, slope=1)
+
+saveRDS(modelFitWinner, file = "C:/Users/vi2073/Documents/GitHub/distill_blog/distill_nickzani/scripts/model_championship.RDS")
