@@ -3,7 +3,7 @@ library(rmarkdown)
 
 create_blog(title = "My Blog", dir = "~")
 
-create_post("Corner Distributions in the EPL: Part 1")
+create_post("Making Nice Tables with {gt}")
 
 library(dplyr)
 library(readr)

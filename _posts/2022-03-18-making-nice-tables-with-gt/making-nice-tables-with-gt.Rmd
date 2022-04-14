@@ -1,0 +1,73 @@
+---
+title: "Making Nice Tables with {gt}"
+description: |
+  A short description of the post.
+author:
+  - name: Nick Zani
+    url: {}
+date: 2022-03-18
+output:
+  distill::distill_article:
+    self_contained: false
+---
+
+### Introduction
+
+### Data
+
+```{r eval=TRUE}
+library(tibble)
+library(dplyr)
+library(stringr)
+library(readr)
+library(tidyr)
+library(janitor)
+library(ggplot2)
+library(gt)
+
+epl_2020_21 <- readr::read_csv('https://www.football-data.co.uk/mmz4281/2122/E0.csv') %>%
+  clean_names() %>%
+  mutate(date = as.Date(date, format="%d/%m/%Y"),
+         start_hr = str_extract(time, "[0-9]{2}"))
+
+five_teams <- epl_2020_21 %>%
+  group_by(home_team) %>%
+  count() %>%
+  head(5) %>%
+  pull(home_team)
+
+plot_home_form <- function(team, size){
+  
+  home_form_data <- epl_2020_21 %>%
+    filter(home_team == team) %>%
+    arrange(desc(date)) %>%
+    head(5) %>%
+    select(ftr) %>%
+    mutate(id = row_number(),
+           yvalue = 1,
+           colour = case_when(ftr == "H" ~ "#228B22",
+                              ftr == "A" ~ "#ff0000",
+                              ftr == "D" ~ "#808080"))
+  
+  #return(home_form_data)
+  
+  ggplot(home_form_data) +
+    geom_point(aes(x = id, y = yvalue, colour = colour), size = size) +
+    scale_colour_identity() +
+    theme_void()
+  
+}
+
+plot_home_form("Arsenal", 20)
+
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+Distill is a publication format for scientific and technical writing, native to the web.
+
+Learn more about using Distill at <https://rstudio.github.io/distill>.
+
+

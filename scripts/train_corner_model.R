@@ -41,6 +41,19 @@ all_data <- bind_rows(epl_2021_22, epl_2020_21, epl_2019_20, epl_2018_19) %>%
 
 all_data %>% group_by(home_corner_winner) %>% count()
 
+all_data %>% mutate(home_corner_winner = case_when(hc > ac ~ "H", 
+                                                   ac > hc ~ "A",
+                                                   TRUE ~ "D")) %>%
+  group_by(home_corner_winner) %>% count() %>% ungroup() %>%
+  mutate(freq = n / sum(n))
+
+all_data %>% mutate(home_corner_winner = case_when(hc > ac ~ "H", 
+                                                   ac > hc ~ "A",
+                                                   TRUE ~ "D")) %>%
+  filter(home_corner_winner == "D") %>%
+  group_by(hc, ac) %>% count() %>% ungroup() %>%
+  mutate(freq = n / sum(n))
+
 # split up and then stick back together
 
 home_data <- all_data %>%
