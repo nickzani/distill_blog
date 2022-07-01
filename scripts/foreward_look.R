@@ -9,13 +9,14 @@ library(randomForest)
 library(caret)
 library(gbm)
 library(pROC)
+library(measures)
 
 # readr::read_csv('https://www.football-data.co.uk/mmz4281/2122/E0.csv') %>%  clean_names() %>% group_by(home_team) %>% count()
 # readr::read_csv('https://www.football-data.co.uk/mmz4281/2122/E0.csv') %>%  clean_names() %>% mutate(date = as.Date(date, format="%d/%m/%Y")) %>% summarise(maxdt = max(date))
 
-future_games <- data.frame(home_team = c("Tottenham", "Man United", "Southampton", "Watford", "Newcastle", "West Ham"),
-                           away_team = c("Brighton", "Norwich", "Arsenal", "Brentford", "Leicester", "Burnley"),
-                           date = c("16/04/2022", "16/04/2022", "16/04/2022", "16/04/2022", "17/04/2022", "17/04/2022"))
+future_games <- data.frame(home_team = c("Arsenal", "Brentford", "Brighton", "Burnley", "Chelsea", "Crystal Palace", "Leicester", "Liverpool", "Man City", "Norwich"),
+                           away_team = c("Everton", "Leeds", "West Ham", "Newcastle", "Watford", "Man United", "Southampton", "Wolves", "Aston Villa", "Tottenham"),
+                           date = rep("22/05/2022", 10))
 
 epl_2021_22 <- readr::read_csv('https://www.football-data.co.uk/mmz4281/2122/E0.csv') %>%
   clean_names() %>%
@@ -151,6 +152,7 @@ tracker <- read_csv("scripts/tracker.csv") %>% clean_names()
 
 tracker <- tracker %>%
   filter(bet %in% c("H", "A")) %>%
+  filter(!is.na(winner)) %>%
   mutate(p_and_l = case_when(winner == "N" ~ bet_amt * -1,
                              winner == "Y" ~ bet_amt * (odds -1))) %>%
   mutate(betid = row_number()) %>%
@@ -160,17 +162,33 @@ tracker <- tracker %>%
   mutate(prob_used = case_when(bet == "H" ~ prob_home_winner,
                                bet == "A" ~ prob_away_win))%>%
   mutate(expected_value = (bet_amt * (odds - 1) * prob_used) - (bet_amt * (1 - prob_used))) %>%
-  mutate(cumulative_pl = cumsum(p_and_l),
+  mutate(cumulative_pl = cumsum(adjusted_pl),
          cumulative_ev = cumsum(expected_value))
 
-tail(tracker %>% select(cumulative_pl, cumulative_ev), 1)
+tail(tracker %>% select(betid, cumulative_pl, cumulative_ev), 1)
 
 ggplot(tracker) +
   geom_line(aes(x = betid, y = cumulative_pl), size = 2, colour = "dodgerblue") +
   geom_line(aes(x = betid, y = cumulative_ev), size = 2, colour = "black", linetype = "longdash") +
-  theme_minimal()
+  theme_classic()
 
 sum(tracker$p_and_l)/sum(tracker$bet_amt)
+
+ggplot(tracker, aes(x = betid, y = cumulative_pl)) +
+  geom_line(size = 2, colour = "dodgerblue") +
+  stat_smooth(method = "lm", colour = "black", linetype = "longdash") +
+  labs(x = "Bet Number",
+       y = "Total Profit/Loss")
+
+summary(lm(cumulative_pl ~ 0 + betid, data = tracker))
+summary(lm(cumulative_pl ~ 0 + cumulative_ev, data = tracker))
+
+cor(tracker$adjusted_pl, tracker$expected_value)
+cor(tracker$cumulative_pl, tracker$cumulative_ev)
+
+## profit by source
+
+tracker %>% group_by(odds_from) %>% summarise(pl = sum(adjusted_pl))
   
 ## compare to actuals
 
@@ -186,7 +204,8 @@ epl_2021_22 <- readr::read_csv('https://www.football-data.co.uk/mmz4281/2122/E0.
          match_id = 1000 + row_number(),
          season_id = 2022) %>%
   mutate(home_corner_winner = case_when(hc > ac ~ 1, TRUE ~ 0)) %>%
-  select(home_team, away_team, date, hc, ac, home_corner_winner)
+  mutate(corner_diff = hc-ac) %>%
+  select(home_team, away_team, date, hc, ac, home_corner_winner, corner_diff)
 
 merged <- tracker_all %>%
   inner_join(epl_2021_22, by = c("home_team", "away_team", "date"))
@@ -201,6 +220,22 @@ prob_roll_up <- merged %>%
 ggplot(prob_roll_up) +
   geom_point(aes(x = rounded_prob_home, y = perc_correct)) +
   geom_abline(intercept=0, slope=1)
+
+##################################
+# brier score
+##################################
+
+Brier(merged$prob_home_winner, merged$home_corner_winner, negative = 0, positive = 1)
+
+##################################
+
+## how does winning margin compare
+
+corner_diff_rollup <- merged %>%
+  mutate(rounded_prob_home = round_any(prob_home_winner, 0.05))
+
+ggplot(corner_diff_rollup) +
+  geom_boxplot(aes(x = rounded_prob_home, y = corner_diff, group = rounded_prob_home)) 
 
 ## how do BF compare
 
@@ -221,8 +256,20 @@ ggplot(odds_roll_up) +
 
 bf_nz <- merged %>%
   filter(!is.na(bf_h)) %>%
-  mutate(perc_bfh = 1/bf_h)
+  mutate(perc_bfh = 1/bf_h) %>%
+  mutate(perc_bfa = 1/bf_a)
 
 ggplot(bf_nz) +
-  geom_point(aes(x = prob_home_winner, y = perc_bfh)) +
+  geom_point(aes(x = prob_home_winner, y = perc_bfh), colour = "red") +
+  geom_point(aes(x = prob_away_win, y = perc_bfa), colour = "blue") +
   geom_abline(intercept=0, slope=1)
+
+## when the model thinks the favourite is the opposite to BF
+
+reverse_faves <- merged %>%
+  filter(!is.na(bf_h)) %>%
+  mutate(perc_bfh = 1/bf_h) %>%
+  filter((prob_home_winner > 0.6 & perc_bfh < 0.5 | prob_home_winner < 0.4 & perc_bfh > 0.5)) %>%
+  summarise(cnt = n(),
+            winners = sum(home_corner_winner),
+            perc_correct = winners/cnt)

@@ -9,6 +9,7 @@ library(randomForest)
 library(caret)
 library(gbm)
 library(pROC)
+library(measures)
 
 epl_2021_22 <- readr::read_csv('https://www.football-data.co.uk/mmz4281/2122/E2.csv') %>%
   clean_names() %>%
@@ -39,7 +40,7 @@ all_data <- bind_rows(epl_2021_22, epl_2020_21, epl_2019_20, epl_2018_19) %>%
 
 # whats the home/away breakdown
 
-all_data %>% group_by(home_corner_winner) %>% count()
+all_data %>% group_by(home_corner_winner)
 
 # split up and then stick back together
 

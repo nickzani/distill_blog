@@ -4,6 +4,7 @@ library(rmarkdown)
 create_blog(title = "My Blog", dir = "~")
 
 create_post("Making Nice Tables with {gt}")
+create_post("Setting up R Markdown")
 
 library(dplyr)
 library(readr)

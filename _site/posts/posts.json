@@ -1,5 +1,22 @@
 [
   {
+    "path": "posts/2022-06-28-setting-up-r-markdown/",
+    "title": "Setting up R Markdown",
+    "description": "Getting the most out of R Markdown.",
+    "author": [
+      {
+        "name": "Nick Zani",
+        "url": {}
+      }
+    ],
+    "date": "2022-06-28",
+    "categories": [],
+    "contents": "\r\nIntroduction\r\nMarkdown is a great way of presenting output. Here is my setup to get the most out of it.\r\nCreate the Markdown File\r\nThis can be created in the usual way - file/new file from the RStudio menu.\r\n\r\nChange the Settings\r\nClicking on the cog at the top brings up some different options. I usually change these to be:\r\nUse Visual Editor\r\nPreview in Viewer Pane\r\nChunk Output in Console\r\n\r\nAdd in Tabset Classes\r\nTabsets allow readers to view the content of different sections by clicking the tab titles instead of scrolling back and forth on the page. They are a great way of laying out a piece of work. They can be created by adding a tabset class to the heading, either in the Markdown itself:\r\n\r\n\r\n# Document Heading {.tabset}\r\n\r\n\r\n\r\nOr in the visual editor:\r\n\r\nBonus: Use Emojis to make your Tabs Looks Awesome\r\nThese can be pasted in from the Windows Emoji window:\r\n\r\n\r\n\r\n\r\n",
+    "preview": {},
+    "last_modified": "2022-07-01T10:57:21+01:00",
+    "input_file": "setting-up-r-markdown.knit.md"
+  },
+  {
     "path": "posts/2022-02-25-corner-distributions-in-the-epl-part-1/",
     "title": "Corner Distributions in the EPL: Part 1",
     "description": "How can the number of home and away corners in the EPL be modelled, and can we build a prediction model?",
