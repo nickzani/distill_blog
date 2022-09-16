@@ -1,3 +1,5 @@
+# Can we predict which team will win more corners based on historic performance?
+
 library(tibble)
 library(dplyr)
 library(stringr)
@@ -10,6 +12,10 @@ library(caret)
 library(gbm)
 library(pROC)
 library(measures)
+
+##################################
+# download the historic football data
+##################################
 
 epl_2021_22 <- readr::read_csv('https://www.football-data.co.uk/mmz4281/2122/E0.csv') %>%
   clean_names() %>%
@@ -35,7 +41,12 @@ epl_2018_19 <- readr::read_csv('https://www.football-data.co.uk/mmz4281/1819/E0.
          match_id = 4000 + row_number(),
          season_id = 2019)
 
-all_data <- bind_rows(epl_2021_22, epl_2020_21, epl_2019_20, epl_2018_19) %>%
+# put these all together in one long dataframe and create a flag to show which team had more corners
+
+all_data <- bind_rows(epl_2021_22, 
+                      epl_2020_21, 
+                      epl_2019_20, 
+                      epl_2018_19) %>%
   mutate(home_corner_winner = case_when(hc > ac ~ 1, TRUE ~ 0))
 
 # whats the home/away breakdown
@@ -63,6 +74,27 @@ xg_dat <- readr::read_csv('https://projects.fivethirtyeight.com/soccer-api/club/
   clean_names() %>%
   filter(league == "Barclays Premier League")
 
+# the 538 expected goals team names are different to the football data ones so will make a lookup between the two
+
+xg_lkp <- structure(list(xg_team = c("AFC Bournemouth", "Arsenal", "Aston Villa", 
+                           "Brentford", "Brighton and Hove Albion", "Burnley", "Cardiff City", 
+                           "Chelsea", "Crystal Palace", "Everton", "Fulham", "Huddersfield Town", 
+                           "Leeds United", "Leicester City", "Liverpool", "Manchester City", 
+                           "Manchester United", "Newcastle", "Norwich City", "Sheffield United", 
+                           "Southampton", "Tottenham Hotspur", "Watford", "West Bromwich Albion", 
+                           "West Ham United", "Wolverhampton"), 
+                     fd_team = c("Bournemouth", "Arsenal", "Aston Villa", "Brentford", "Brighton", "Burnley", 
+                                 "Cardiff", "Chelsea", "Crystal Palace", "Everton", "Fulham", 
+                                  "Huddersfield", "Leeds", "Leicester", "Liverpool", "Man City", 
+                                 "Man United", "Newcastle", "Norwich", "Sheffield United", "Southampton", 
+                                 "Tottenham", "Watford", "West Brom", "West Ham", "Wolves")), 
+                     class = c("spec_tbl_df", "tbl_df", "tbl", "data.frame"), 
+                     row.names = c(NA, -26L), 
+                     spec = structure(list(cols = list(xg_team = structure(list(), class = c("collector_character", "collector")), 
+                                                       fd_team = structure(list(), class = c("collector_character",  "collector"))), 
+                                           default = structure(list(), class = c("collector_guess", "collector")), skip = 1L), class = "col_spec")
+                     )
+
 xg_lkp <- readr::read_csv('C:/Users/vi2073/Documents/GitHub/distill_blog/distill_nickzani/scripts/xg_team_lkp.csv') %>%
   clean_names()
 
@@ -71,7 +103,7 @@ xg_dat_teams <- xg_dat %>%
   rename(home_team = fd_team) %>%
   inner_join(xg_lkp, by = c("team2" = "xg_team")) %>%
   rename(away_team = fd_team) %>%
-  select(home_team, away_team, date, spi1, spi2, xg1, xg2)
+  select(home_team, away_team, date, spi1, spi2, xg1, xg2, nsxg1, nsxg2, importance1, importance2)
 
 nrow(all_data)
 
@@ -90,36 +122,46 @@ nrow(all_data)
 # split up and then stick back together
 
 home_data <- all_data %>%
-  dplyr::select(date, match_id, season_id, home_team, ftr, fthg, hc, hs, hst, ac, spi1, spi2, xg1, xg2) %>%
+  dplyr::select(date, match_id, season_id, home_team, ftr, fthg, ftag, hc, hs, as, hst, ac, hy, spi1, spi2, xg1, xg2, nsxg1, nsxg2, importance1, importance2) %>%
   mutate(team_type = "Home",
          win_flag = case_when(ftr == "H" ~ 1, TRUE ~ 0),
          draw_flag = case_when(ftr == "D" ~ 1, TRUE ~ 0)) %>%
   rename(team = home_team,
          full_time_goals = fthg,
+         goals_conceded = ftag,
          corners = hc,
          shots = hs,
+         shots_conceded = as,
          shots_target = hst,
          corners_conceded = ac,
          spi = spi1,
          spi_away = spi2,
          xg = xg1,
-         xg_conceded = xg2)
+         xg_conceded = xg2,
+         nsxg = nsxg1,
+         nsxg_conceded = nsxg2,
+         importance = importance1)
 
 away_data <- all_data %>%
-  dplyr::select(date, match_id, season_id, away_team, ftr, ftag, ac, as, ast, hc, spi1, spi2, xg1, xg2) %>%
+  dplyr::select(date, match_id, season_id, away_team, ftr, ftag, fthg, ac, as, hs, ast, hc, ay, spi1, spi2, xg1, xg2, nsxg1, nsxg2, importance1, importance2) %>%
   mutate(team_type = "Away",
          win_flag = case_when(ftr == "A" ~ 1, TRUE ~ 0),
          draw_flag = case_when(ftr == "D" ~ 1, TRUE ~ 0)) %>%
   rename(team = away_team,
          full_time_goals = ftag,
+         goals_conceded = fthg,
          corners = ac,
          shots = as,
+         shots_conceded = hs,
          shots_target = ast,
          corners_conceded = hc,
          spi = spi2,
          spi_away = spi1,
          xg = xg2,
-         xg_conceded = xg1
+         xg_conceded = xg1,
+         nsxg = nsxg2,
+         nsxg_conceded = nsxg1,
+         importance = importance2
          )
 
 long_data = bind_rows(home_data, away_data)
@@ -141,6 +183,9 @@ hc_model_data2 <- home_data %>%
          lag_1_home_corners_conceded = lag(corners_conceded, n = 1),
          lag_2_home_corners_conceded = lag(corners_conceded, n = 2),
          lag_3_home_corners_conceded = lag(corners_conceded, n = 3),
+         lag_1_home_goals_conceded = lag(goals_conceded, n = 1),
+         lag_2_home_goals_conceded = lag(goals_conceded, n = 2),
+         lag_3_home_goals_conceded = lag(goals_conceded, n = 3),
          lag_1_home_spi = lag(spi, n = 1),
          lag_2_home_spi = lag(spi, n = 2),
          lag_3_home_spi = lag(spi, n = 3),
@@ -152,10 +197,21 @@ hc_model_data2 <- home_data %>%
          lag_3_home_xg = lag(xg, n = 3),
          lag_1_home_xg_conceded = lag(xg_conceded),
          lag_2_home_xg_conceded = lag(xg_conceded, n = 2),
-         lag_3_home_xg_conceded = lag(xg_conceded, n = 3)) %>%
+         lag_3_home_xg_conceded = lag(xg_conceded, n = 3),
+         lag_1_home_nsxg = lag(nsxg, n = 1),
+         lag_2_home_nsxg = lag(nsxg, n = 2),
+         lag_3_home_nsxg = lag(nsxg, n = 3),
+         lag_1_home_importance = lag(importance, n = 1),
+         lag_2_home_importance = lag(importance, n = 2),
+         lag_3_home_importance = lag(importance, n = 3),
+         lag_1_home_nsxg_conceded = lag(nsxg, n = 1),
+         lag_2_home_nsxg_conceded = lag(nsxg, n = 2),
+         lag_3_home_nsxg_conceded = lag(nsxg, n = 3),
+         current_home_importance = importance,
+         current_home_spi = spi) %>%
   ungroup() %>%
   na.omit() %>%
-  select(match_id, starts_with("lag_"))
+  select(match_id, starts_with("lag_"), contains("current"))
 
 ac_model_data2 <- away_data %>%
   arrange(team, date) %>%
@@ -172,6 +228,9 @@ ac_model_data2 <- away_data %>%
          lag_1_away_corners_conceded = lag(corners_conceded, n = 1),
          lag_2_away_corners_conceded = lag(corners_conceded, n = 2),
          lag_3_away_corners_conceded = lag(corners_conceded, n = 3),
+         lag_1_away_goals_conceded = lag(goals_conceded, n = 1),
+         lag_2_away_goals_conceded = lag(goals_conceded, n = 2),
+         lag_3_away_goals_conceded = lag(goals_conceded, n = 3),
          lag_1_away_spi = lag(spi, n = 1),
          lag_2_away_spi = lag(spi, n = 2),
          lag_3_away_spi = lag(spi, n = 3),
@@ -183,10 +242,21 @@ ac_model_data2 <- away_data %>%
          lag_3_away_xg = lag(xg, n = 3),
          lag_1_away_xg_conceded = lag(xg_conceded),
          lag_2_away_xg_conceded = lag(xg_conceded, n = 2),
-         lag_3_away_xg_conceded = lag(xg_conceded, n = 3)) %>%
+         lag_3_away_xg_conceded = lag(xg_conceded, n = 3),
+         lag_1_away_nsxg = lag(nsxg, n = 1),
+         lag_2_away_nsxg = lag(nsxg, n = 2),
+         lag_3_away_nsxg = lag(nsxg, n = 3),
+         lag_1_away_importance = lag(importance, n = 1),
+         lag_2_away_importance = lag(importance, n = 2),
+         lag_3_away_importance = lag(importance, n = 3),
+         lag_1_away_nsxg_conceded = lag(nsxg_conceded),
+         lag_2_away_nsxg_conceded = lag(nsxg_conceded, n = 2),
+         lag_3_away_nsxg_conceded = lag(nsxg_conceded, n = 3),
+         current_away_importance = importance,
+         current_away_spi = spi) %>%
   ungroup() %>%
   na.omit() %>%
-  select(match_id, starts_with("lag_"))
+  select(match_id, starts_with("lag_"), contains("current"))
 
 # merge back together
 
@@ -195,28 +265,14 @@ model_dat <- all_data %>%
   inner_join(hc_model_data2, by = c("match_id")) %>%
   inner_join(ac_model_data2, by = c("match_id"))
 
-model_dat_diff <- model_dat %>%
-  mutate(d1 = lag_1_home_corner - lag_1_away_corner,
-         d2 = lag_2_home_corner - lag_2_away_corner,
-         d3 = lag_3_home_corner - lag_3_away_corner,
-         d4 = lag_1_home_shots - lag_1_away_shots,
-         d5 = lag_2_home_shots - lag_2_away_shots,
-         d6 = lag_3_home_shots - lag_3_away_shots,
-         d7 = lag_1_home_goals - lag_1_away_goals,
-         d8 = lag_2_home_goals - lag_2_away_goals,
-         d9 = lag_3_home_goals - lag_3_away_goals,
-         d10 = lag_1_home_corners_conceded - lag_1_away_corners_conceded,
-         d11 = lag_2_home_corners_conceded - lag_2_away_corners_conceded,
-         d12 = lag_3_home_corners_conceded - lag_3_away_corners_conceded,
-         d13 = lag_1_home_spi - lag_1_away_spi,
-         d14 = lag_2_home_spi - lag_2_away_spi,
-         d15 = lag_3_home_spi - lag_3_away_spi,
-         d16 = lag_1_home_xg - lag_1_away_xg,
-         d17 = lag_2_home_xg - lag_2_away_xg,
-         d18 = lag_3_home_xg - lag_3_away_xg,
-         d19 = lag_1_home_xg_conceded - lag_1_away_xg_conceded,
-         d20 = lag_2_home_xg_conceded - lag_2_away_xg_conceded,
-         d21 = lag_3_home_xg_conceded - lag_3_away_xg_conceded)
+# output for regression model
+
+regression_dat <- all_data %>%
+  select(match_id, home_corner_winner, hc, ac) %>%
+  inner_join(hc_model_data2, by = c("match_id")) %>%
+  inner_join(ac_model_data2, by = c("match_id"))
+
+# saveRDS(regression_dat, "regression_dat.rds")
 
 ############################
 # model
@@ -232,18 +288,11 @@ train_data <- model_dat[trainIndex, ,drop=FALSE]
 train_data <- train_data %>% select(-match_id)
 tune_plus_val_data <- model_dat[-trainIndex, ,drop=FALSE]
 
-# diff here
-train_data_diff <- model_dat_diff[trainIndex, ,drop=FALSE]
-train_data_diff <- train_data_diff %>% select(home_corner_winner, starts_with("d"))
-tune_plus_val_data_diff <- model_dat_diff[-trainIndex, ,drop=FALSE]
-
 objControl <- trainControl(method = 'cv',number = 3)
 myTuning <- expand.grid(n.trees = c(12000), 
                         interaction.depth = c(10), 
                         shrinkage = c(0.0001), 
                         n.minobsinnode = c(4))
-
-
 
 modelFitWinner <- train(as.factor(home_corner_winner) ~ .,
                         data=train_data,
@@ -252,18 +301,9 @@ modelFitWinner <- train(as.factor(home_corner_winner) ~ .,
                         tuneGrid = myTuning,
                         distribution="bernoulli",
                         verbose=TRUE)
-
-modelFitWinner_diff <- train(as.factor(home_corner_winner) ~ .,
-                        data=train_data_diff,
-                        method="gbm",
-                        trControl = objControl,
-                        tuneGrid = myTuning,
-                        distribution="bernoulli",
-                        verbose=TRUE)
 # predict here
 
 predicted_winner <- as.data.frame(predict(modelFitWinner, newdata = tune_plus_val_data, "prob"))
-predicted_winner <- as.data.frame(predict(modelFitWinner_diff, newdata = tune_plus_val_data_diff, "prob"))
 
 tune_plus_val_data$probwinner <- predicted_winner$`1`
 tune_plus_val_data$predwinner <- ifelse(predicted_winner$`1` > predicted_winner$`0`, 1, 0)
@@ -283,6 +323,7 @@ Brier(tune_plus_val_data$probwinner, tune_plus_val_data$home_corner_winner, nega
 
 ## without xg = 0.233
 ## xg = 0.2263204
+## xg plus additional historic = 0.2183327
 
 mycoords <- coords(roccurve, "all")
 
@@ -312,4 +353,90 @@ tune_plus_val_data %>%
     geom_point(aes(x = rounded_prob, y = perc_correct)) +
     geom_abline(intercept=0, slope=1)
 
+###########################################################
+### train the model on the full data here
+###########################################################
+
+modelFitWinner <- train(as.factor(home_corner_winner) ~ .,
+                        data=model_dat,
+                        method="gbm",
+                        trControl = objControl,
+                        tuneGrid = myTuning,
+                        distribution="bernoulli",
+                        verbose=TRUE)
+
+myTuning_c <- expand.grid(n.trees = c(10000), 
+                        interaction.depth = c(10), 
+                        shrinkage = c(0.005), 
+                        n.minobsinnode = c(4))
+
+modelFitHC <- train(hc ~ .,
+                    data=regression_dat %>% select(-ac, -home_corner_winner),
+                    method="gbm",
+                    trControl = objControl,
+                    tuneGrid = myTuning_c,
+                    verbose=TRUE)
+
+modelFitAC <- train(ac ~ .,
+                    data=regression_dat %>% select(-hc, -home_corner_winner),
+                    method="gbm",
+                    trControl = objControl,
+                    tuneGrid = myTuning_c,
+                    verbose=TRUE)
+
 saveRDS(modelFitWinner, file = "C:/Users/vi2073/Documents/GitHub/distill_blog/distill_nickzani/scripts/model_xg.RDS")
+saveRDS(modelFitHC, file = "C:/Users/vi2073/Documents/GitHub/distill_blog/distill_nickzani/scripts/model_hc.RDS")
+saveRDS(modelFitAC, file = "C:/Users/vi2073/Documents/GitHub/distill_blog/distill_nickzani/scripts/model_ac.RDS")
+
+## try with xgboost
+
+library(xgboost)
+
+cv <- xgb.cv(data = as.matrix(train_data), 
+             label = as.factor(train_data$home_corner_winner),
+             nrounds = 15000,
+             nfold = 5,
+             objective = "binary:logistic",
+             eta = 0.0001,
+             max_depth = 10,
+             early_stopping_rounds = 5,
+             verbose = FALSE   # silent
+)
+
+# Get the evaluation log
+elog <- cv$evaluation_log
+
+# Determine and print how many trees minimize training and test error
+elog %>% 
+  summarize(ntrees.train = which.min(train_rmse_mean),   # find the index of min(train_rmse_mean)
+            ntrees.test  = which.min(test_rmse_mean))    # find the index of min(test_rmse_mean)
+
+corner_model_xgb <- xgboost(data = as.matrix(train_data %>% select(-home_corner_winner)), 
+                          label = train_data$home_corner_winner, 
+                          nrounds = 16000,      
+                          objective = "binary:logistic", 
+                          eta = 0.0005,
+                          max_depth = 10,
+                          verbose = TRUE,
+                          early_stopping_rounds = 10
+)
+
+predicted_winner <- predict(corner_model_xgb, newdata = as.matrix(tune_plus_val_data %>% select(-match_id, -home_corner_winner)))
+
+#predicted_winner_prob <- exp(predicted_winner)/(1+exp(predicted_winner))
+
+tune_plus_val_data$probwinner <- predicted_winner_prob
+tune_plus_val_data$predwinner <- ifelse(predicted_winner_prob > 0.5, 1, 0)
+tune_plus_val_data$correct <- ifelse(tune_plus_val_data$home_corner_winner == tune_plus_val_data$predwinner, 1, 0)
+
+sum(tune_plus_val_data$correct)/nrow(tune_plus_val_data)
+
+roccurve <- roc(tune_plus_val_data$home_corner_winner ~ tune_plus_val_data$probwinner)
+auc(roccurve)
+plot(roccurve)
+
+## without xg = 0.6504
+## xg = 0.7295
+
+# brier score
+Brier(tune_plus_val_data$probwinner, tune_plus_val_data$home_corner_winner, negative = 0, positive = 1)

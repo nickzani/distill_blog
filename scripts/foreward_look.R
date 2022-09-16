@@ -10,34 +10,36 @@ library(caret)
 library(gbm)
 library(pROC)
 library(measures)
+library(readxl)
 
-# readr::read_csv('https://www.football-data.co.uk/mmz4281/2122/E0.csv') %>%  clean_names() %>% group_by(home_team) %>% count()
-# readr::read_csv('https://www.football-data.co.uk/mmz4281/2122/E0.csv') %>%  clean_names() %>% mutate(date = as.Date(date, format="%d/%m/%Y")) %>% summarise(maxdt = max(date))
+# readr::read_csv('https://www.football-data.co.uk/mmz4281/2223/E0.csv') %>%  clean_names() %>% group_by(home_team) %>% count()
+# readr::read_csv('https://www.football-data.co.uk/mmz4281/2223/E0.csv') %>%  clean_names() %>% mutate(date = as.Date(date, format="%d/%m/%Y")) %>% summarise(maxdt = max(date))
 
-future_games <- data.frame(home_team = c("Arsenal", "Brentford", "Brighton", "Burnley", "Chelsea", "Crystal Palace", "Leicester", "Liverpool", "Man City", "Norwich"),
-                           away_team = c("Everton", "Leeds", "West Ham", "Newcastle", "Watford", "Man United", "Southampton", "Wolves", "Aston Villa", "Tottenham"),
-                           date = rep("22/05/2022", 10))
+future_games <- data.frame(home_team = c("Nott'm Forest", "Aston Villa", "Wolves", "Newcastle", "Tottenham", "Brentford", "Everton"),
+                           away_team = c("Fulham", "Southampton", "Man City", "Bournemouth", "Leicester", "Arsenal", "West Ham"),
+                           date = c(rep("16/09/2022", 2), rep("17/09/2022", 3), rep("18/09/2022", 2))
+                           )
 
-epl_2021_22 <- readr::read_csv('https://www.football-data.co.uk/mmz4281/2122/E0.csv') %>%
+epl_2021_22 <- readr::read_csv('https://www.football-data.co.uk/mmz4281/2223/E0.csv') %>%
   clean_names() %>%
   bind_rows(future_games) %>%
   mutate(date = as.Date(date, format="%d/%m/%Y"),
          match_id = 1000 + row_number(),
          season_id = 2022)
 
-epl_2020_21 <- readr::read_csv('https://www.football-data.co.uk/mmz4281/2021/E0.csv') %>%
+epl_2020_21 <- readr::read_csv('https://www.football-data.co.uk/mmz4281/2122/E0.csv') %>%
   clean_names() %>%
   mutate(date = as.Date(date, format="%d/%m/%Y"),
          match_id = 2000 + row_number(),
          season_id = 2021)
 
-epl_2019_20 <- readr::read_csv('https://www.football-data.co.uk/mmz4281/1920/E0.csv') %>%
+epl_2019_20 <- readr::read_csv('https://www.football-data.co.uk/mmz4281/2021/E0.csv') %>%
   clean_names() %>%
   mutate(date = as.Date(date, format="%d/%m/%Y"),
          match_id = 3000 + row_number(),
          season_id = 2020)
 
-epl_2018_19 <- readr::read_csv('https://www.football-data.co.uk/mmz4281/1819/E0.csv') %>%
+epl_2018_19 <- readr::read_csv('https://www.football-data.co.uk/mmz4281/1920/E0.csv') %>%
   clean_names() %>%
   mutate(date = as.Date(date, format="%d/%m/%Y"),
          match_id = 4000 + row_number(),
@@ -46,31 +48,79 @@ epl_2018_19 <- readr::read_csv('https://www.football-data.co.uk/mmz4281/1819/E0.
 all_data <- bind_rows(epl_2021_22, epl_2020_21, epl_2019_20, epl_2018_19) %>%
   mutate(home_corner_winner = case_when(hc > ac ~ 1, TRUE ~ 0))
 
+##################################
+# download the xg here
+##################################
+
+xg_dat <- readr::read_csv('https://projects.fivethirtyeight.com/soccer-api/club/spi_matches.csv') %>%
+  clean_names() %>%
+  filter(league == "Barclays Premier League")
+
+xg_lkp <- readr::read_csv('C:/Users/vi2073/Documents/GitHub/distill_blog/distill_nickzani/scripts/xg_team_lkp.csv') %>%
+  clean_names()
+
+xg_dat_teams <- xg_dat %>%
+  inner_join(xg_lkp, by = c("team1" = "xg_team")) %>%
+  rename(home_team = fd_team) %>%
+  inner_join(xg_lkp, by = c("team2" = "xg_team")) %>%
+  rename(away_team = fd_team) %>%
+  select(home_team, away_team, date, spi1, spi2, xg1, xg2, nsxg1, nsxg2, importance1, importance2)
+
+nrow(all_data)
+
+all_data <- all_data %>%
+  inner_join(xg_dat_teams, by = c("home_team" = "home_team",
+                                  "away_team" = "away_team",
+                                  "date" = "date"))
+
+nrow(all_data)
+
+###############################################
 # split up and then stick back together
+###############################################
 
 home_data <- all_data %>%
-  dplyr::select(date, match_id, season_id, home_team, ftr, fthg, hc, hs, hst, ac) %>%
+  dplyr::select(date, match_id, season_id, home_team, ftr, fthg, ftag, hc, hs, as, hst, ac, hy, spi1, spi2, xg1, xg2, nsxg1, nsxg2, importance1, importance2) %>%
   mutate(team_type = "Home",
          win_flag = case_when(ftr == "H" ~ 1, TRUE ~ 0),
          draw_flag = case_when(ftr == "D" ~ 1, TRUE ~ 0)) %>%
   rename(team = home_team,
          full_time_goals = fthg,
+         goals_conceded = ftag,
          corners = hc,
          shots = hs,
+         shots_conceded = as,
          shots_target = hst,
-         corners_conceded = ac)
+         corners_conceded = ac,
+         spi = spi1,
+         spi_away = spi2,
+         xg = xg1,
+         xg_conceded = xg2,
+         nsxg = nsxg1,
+         nsxg_conceded = nsxg2,
+         importance = importance1)
 
 away_data <- all_data %>%
-  dplyr::select(date, match_id, season_id, away_team, ftr, ftag, ac, as, ast, hc) %>%
+  dplyr::select(date, match_id, season_id, away_team, ftr, ftag, fthg, ac, as, hs, ast, hc, ay, spi1, spi2, xg1, xg2, nsxg1, nsxg2, importance1, importance2) %>%
   mutate(team_type = "Away",
          win_flag = case_when(ftr == "A" ~ 1, TRUE ~ 0),
          draw_flag = case_when(ftr == "D" ~ 1, TRUE ~ 0)) %>%
   rename(team = away_team,
          full_time_goals = ftag,
+         goals_conceded = fthg,
          corners = ac,
          shots = as,
+         shots_conceded = hs,
          shots_target = ast,
-         corners_conceded = hc)
+         corners_conceded = hc,
+         spi = spi2,
+         spi_away = spi1,
+         xg = xg2,
+         xg_conceded = xg1,
+         nsxg = nsxg2,
+         nsxg_conceded = nsxg1,
+         importance = importance2
+  )
 
 long_data = bind_rows(home_data, away_data)
 
@@ -88,12 +138,44 @@ hc_model_data2 <- home_data %>%
          lag_1_home_goals = lag(full_time_goals, n = 1),
          lag_2_home_goals = lag(full_time_goals, n = 2),
          lag_3_home_goals = lag(full_time_goals, n = 3),
+         lag_1_home_yc = lag(hy, n = 1),
+         lag_2_home_yc = lag(hy, n = 2),
+         lag_3_home_yc = lag(hy, n = 3),
          lag_1_home_corners_conceded = lag(corners_conceded, n = 1),
          lag_2_home_corners_conceded = lag(corners_conceded, n = 2),
-         lag_3_home_corners_conceded = lag(corners_conceded, n = 3)) %>%
+         lag_3_home_corners_conceded = lag(corners_conceded, n = 3),
+         lag_1_home_shots_conceded = lag(shots_conceded, n = 1),
+         lag_2_home_shots_conceded = lag(shots_conceded, n = 2),
+         lag_3_home_shots_conceded = lag(shots_conceded, n = 3),
+         lag_1_home_goals_conceded = lag(goals_conceded, n = 1),
+         lag_2_home_goals_conceded = lag(goals_conceded, n = 2),
+         lag_3_home_goals_conceded = lag(goals_conceded, n = 3),
+         lag_1_home_spi = lag(spi, n = 1),
+         lag_2_home_spi = lag(spi, n = 2),
+         lag_3_home_spi = lag(spi, n = 3),
+         lag_1_home_against_spi = lag(spi_away, n = 1),
+         lag_2_home_against_spi = lag(spi_away, n = 2),
+         lag_3_home_against_spi = lag(spi_away, n = 3),
+         lag_1_home_xg = lag(xg, n = 1),
+         lag_2_home_xg = lag(xg, n = 2),
+         lag_3_home_xg = lag(xg, n = 3),
+         lag_1_home_xg_conceded = lag(xg_conceded),
+         lag_2_home_xg_conceded = lag(xg_conceded, n = 2),
+         lag_3_home_xg_conceded = lag(xg_conceded, n = 3),
+         lag_1_home_nsxg = lag(nsxg, n = 1),
+         lag_2_home_nsxg = lag(nsxg, n = 2),
+         lag_3_home_nsxg = lag(nsxg, n = 3),
+         lag_1_home_importance = lag(importance, n = 1),
+         lag_2_home_importance = lag(importance, n = 2),
+         lag_3_home_importance = lag(importance, n = 3),
+         lag_1_home_nsxg_conceded = lag(nsxg, n = 1),
+         lag_2_home_nsxg_conceded = lag(nsxg, n = 2),
+         lag_3_home_nsxg_conceded = lag(nsxg, n = 3),
+         current_home_importance = importance,
+         current_home_spi = spi) %>%
   ungroup() %>%
   filter(!is.na(lag_3_home_corner)) %>%
-  select(match_id, starts_with("lag_"))
+  select(match_id, starts_with("lag_"), contains("current"))
 
 ac_model_data2 <- away_data %>%
   arrange(team, date) %>%
@@ -107,12 +189,44 @@ ac_model_data2 <- away_data %>%
          lag_1_away_goals = lag(full_time_goals, n = 1),
          lag_2_away_goals = lag(full_time_goals, n = 2),
          lag_3_away_goals = lag(full_time_goals, n = 3),
+         lag_1_away_yc = lag(ay, n = 1),
+         lag_2_away_yc = lag(ay, n = 2),
+         lag_3_away_yc = lag(ay, n = 3),
          lag_1_away_corners_conceded = lag(corners_conceded, n = 1),
          lag_2_away_corners_conceded = lag(corners_conceded, n = 2),
-         lag_3_away_corners_conceded = lag(corners_conceded, n = 3)) %>%
+         lag_3_away_corners_conceded = lag(corners_conceded, n = 3),
+         lag_1_away_shots_conceded = lag(shots_conceded, n = 1),
+         lag_2_away_shots_conceded = lag(shots_conceded, n = 2),
+         lag_3_away_shots_conceded = lag(shots_conceded, n = 3),
+         lag_1_away_goals_conceded = lag(goals_conceded, n = 1),
+         lag_2_away_goals_conceded = lag(goals_conceded, n = 2),
+         lag_3_away_goals_conceded = lag(goals_conceded, n = 3),
+         lag_1_away_spi = lag(spi, n = 1),
+         lag_2_away_spi = lag(spi, n = 2),
+         lag_3_away_spi = lag(spi, n = 3),
+         lag_1_away_against_spi = lag(spi_away, n = 1),
+         lag_2_away_against_spi = lag(spi_away, n = 2),
+         lag_3_away_against_spi = lag(spi_away, n = 3),
+         lag_1_away_xg = lag(xg, n = 1),
+         lag_2_away_xg = lag(xg, n = 2),
+         lag_3_away_xg = lag(xg, n = 3),
+         lag_1_away_xg_conceded = lag(xg_conceded),
+         lag_2_away_xg_conceded = lag(xg_conceded, n = 2),
+         lag_3_away_xg_conceded = lag(xg_conceded, n = 3),
+         lag_1_away_nsxg = lag(nsxg, n = 1),
+         lag_2_away_nsxg = lag(nsxg, n = 2),
+         lag_3_away_nsxg = lag(nsxg, n = 3),
+         lag_1_away_importance = lag(importance, n = 1),
+         lag_2_away_importance = lag(importance, n = 2),
+         lag_3_away_importance = lag(importance, n = 3),
+         lag_1_away_nsxg_conceded = lag(nsxg_conceded),
+         lag_2_away_nsxg_conceded = lag(nsxg_conceded, n = 2),
+         lag_3_away_nsxg_conceded = lag(nsxg_conceded, n = 3),
+         current_away_importance = importance,
+         current_away_spi = spi) %>%
   ungroup() %>%
   filter(!is.na(lag_3_away_corner)) %>%
-  select(match_id, starts_with("lag_"))
+  select(match_id, starts_with("lag_"), contains("current"))
 
 # merge back together
 
@@ -130,25 +244,89 @@ to_predict <- all_data %>%
 
 # predict
 
-modelFitWinner <- readRDS(file = "C:/Users/vi2073/Documents/GitHub/distill_blog/distill_nickzani/scripts/model.RDS")
+modelFitWinner    <- readRDS(file = "C:/Users/vi2073/Documents/GitHub/distill_blog/distill_nickzani/scripts/model.RDS")
+modelFitWinnerXG  <- readRDS(file = "C:/Users/vi2073/Documents/GitHub/distill_blog/distill_nickzani/scripts/model_xg.RDS")
+modelFitHC        <- readRDS(file = "C:/Users/vi2073/Documents/GitHub/distill_blog/distill_nickzani/scripts/model_hc.RDS")
+modelFitAC        <- readRDS(file = "C:/Users/vi2073/Documents/GitHub/distill_blog/distill_nickzani/scripts/model_ac.RDS")
 
 predicted_winner <- as.data.frame(predict(modelFitWinner, newdata = to_predict, "prob"))
+predicted_winner_xg <- as.data.frame(predict(modelFitWinnerXG, newdata = to_predict, "prob"))
 
 to_predict$prob_home_winner <- predicted_winner$`1`
+to_predict$prob_home_winner_xg <- predicted_winner_xg$`1`
+
+to_predict$pred_hc <- predict(modelFitHC, newdata = to_predict)
+to_predict$pred_ac <- predict(modelFitAC, newdata = to_predict)
+
+round_any = function(x, accuracy, f=round){f(x/ accuracy) * accuracy}
 
 to_predict <- to_predict %>%
-  select(home_team, away_team, date, prob_home_winner) %>%
+  select(home_team, away_team, date, prob_home_winner, prob_home_winner_xg, pred_hc, pred_ac) %>%
   mutate(prob_away_win = 1- 0.08 - prob_home_winner,
-         odds_home_win = 1+((1-prob_home_winner)/prob_home_winner),
-         odds_away_win = 1+((1-prob_away_win)/prob_away_win),
-         home_odds_plus_10perc = odds_home_win * 1.1,
-         away_odds_plus_10perc = odds_away_win * 1.1)
+         prob_away_win_xg = 1- 0.08 - prob_home_winner_xg,
+         odds_home_win_xg = round_any(1+((1-prob_home_winner_xg)/prob_home_winner_xg), 0.01),
+         odds_away_win_xg = round_any(1+((1-prob_away_win_xg)/prob_away_win_xg), 0.01),
+         home_odds_plus_10perc = odds_home_win_xg * 1.1,
+         away_odds_plus_10perc = odds_away_win_xg * 1.1,
+         total_c = pred_hc + pred_ac) %>%
+  select(home_team, away_team, date, 
+         prob_home_winner, prob_away_win,
+         prob_home_winner_xg, prob_away_win_xg,
+         pred_hc, pred_ac, total_c,
+         odds_home_win_xg,
+         odds_away_win_xg,
+         home_odds_plus_10perc,
+         away_odds_plus_10perc)
 
-write.csv(to_predict, file = "scripts/corneroutput.csv", row.names = FALSE)
+write.csv(to_predict, file = "scripts/corneroutput_2023.csv", row.names = FALSE)
 
+#########################################################
 ## read in the tracker
+#########################################################
 
-tracker <- read_csv("scripts/tracker.csv") %>% clean_names()
+tracker <- readxl::read_excel(path = "scripts/tracker_2022.xlsx", sheet = "Raw") %>% 
+  clean_names() %>%
+  mutate(date = as.Date(date))
+
+# get the recent season data
+
+recent_results <- readr::read_csv('https://www.football-data.co.uk/mmz4281/2223/E0.csv') %>%
+  clean_names() %>%
+  bind_rows(future_games) %>%
+  mutate(date = as.Date(date, format="%d/%m/%Y"),
+         match_id = 1000 + row_number(),
+         season_id = 2022)  %>%
+  mutate(home_corner_winner = case_when(hc > ac ~ 1, TRUE ~ 0)) %>%
+  mutate(corner_diff = hc-ac) %>%
+  select(home_team, away_team, date, hc, ac, home_corner_winner, corner_diff)
+
+# merge together. Only use the bet data
+
+bets <- bind_rows(tracker %>% 
+                    select(home_team, away_team, date, winner_bet, winner_odds, winner_odds_from) %>%
+                    dplyr::rename(bet = winner_bet, odds = winner_odds, odds_from = winner_odds_from) %>% 
+                    filter(!is.na(bet) & bet != "No Bet") %>%
+                    mutate(type = "corner_winner"),
+                  tracker %>% 
+                    select(home_team, away_team, date, h_bet, h_odds, h_odds_from) %>%
+                    dplyr::rename(bet = h_bet, odds = h_odds, odds_from = h_odds_from) %>% 
+                    filter(!is.na(bet) & bet != "No Bet") %>%
+                    mutate(type = "home_count"),
+                  tracker %>% 
+                    select(home_team, away_team, date, a_bet, a_odds, a_odds_from) %>%
+                    dplyr::rename(bet = a_bet, odds = a_odds, odds_from = a_odds_from) %>% 
+                    filter(!is.na(bet) & bet != "No Bet") %>%
+                    mutate(type = "away_count"),
+                  tracker %>% 
+                    select(home_team, away_team, date, t_bet, t_odds, t_odds_from) %>%
+                    dplyr::rename(bet = t_bet, odds = t_odds, odds_from = t_odds_from) %>% 
+                    filter(!is.na(bet) & bet != "No Bet") %>%
+                    mutate(type = "total_count"),
+                  ) %>%
+  inner_join(epl_2021_22, by = c("home_team", "away_team", "date"))
+
+merged <- tracker_all %>%
+  inner_join(recent_results, by = c("home_team", "away_team", "date"))
 
 tracker <- tracker %>%
   filter(bet %in% c("H", "A")) %>%

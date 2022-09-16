@@ -1,0 +1,246 @@
+---
+title: "Using Expected Goals to Predict Future Matches"
+description: |
+  Can we combine expected goals with actual goals to predict future results?
+author:
+  - name: Nick Zani
+    url: {}
+date: 2022-07-15
+output:
+  distill::distill_article:
+    self_contained: false
+---
+
+
+### Introduction
+
+### Get the Data
+
+```{r eval=TRUE}
+library(tibble)
+library(dplyr)
+library(stringr)
+library(readr)
+library(tidyr)
+library(janitor)
+library(ggplot2)
+
+epl_2021_22 <- readr::read_csv('https://www.football-data.co.uk/mmz4281/2122/E0.csv') %>%
+  clean_names() %>%
+  mutate(date = as.Date(date, format="%d/%m/%Y"),
+         match_id = 1000 + row_number(),
+         season_id = 2022)
+
+epl_2020_21 <- readr::read_csv('https://www.football-data.co.uk/mmz4281/2021/E0.csv') %>%
+  clean_names() %>%
+  mutate(date = as.Date(date, format="%d/%m/%Y"),
+         match_id = 2000 + row_number(),
+         season_id = 2021)
+
+epl_2019_20 <- readr::read_csv('https://www.football-data.co.uk/mmz4281/1920/E0.csv') %>%
+  clean_names() %>%
+  mutate(date = as.Date(date, format="%d/%m/%Y"),
+         match_id = 3000 + row_number(),
+         season_id = 2020)
+
+epl_2018_19 <- readr::read_csv('https://www.football-data.co.uk/mmz4281/1819/E0.csv') %>%
+  clean_names() %>%
+  mutate(date = as.Date(date, format="%d/%m/%Y"),
+         match_id = 4000 + row_number(),
+         season_id = 2019)
+
+all_data <- bind_rows(epl_2021_22, epl_2020_21, epl_2019_20, epl_2018_19) %>%
+  mutate(home_winner = case_when(ftr == "H" ~ 1, TRUE ~ 0))
+
+```
+
+```{r}
+xg_dat <- readr::read_csv('https://projects.fivethirtyeight.com/soccer-api/club/spi_matches.csv') %>%
+  clean_names() %>%
+  filter(league == "Barclays Premier League")
+
+xg_lkp <- structure(list(xg_team = c("AFC Bournemouth", "Arsenal", "Aston Villa", 
+                                      "Brentford", "Brighton and Hove Albion", "Burnley", "Cardiff City", 
+                                      "Chelsea", "Crystal Palace", "Everton", "Fulham", "Huddersfield Town", 
+                                      "Leeds United", "Leicester City", "Liverpool", "Manchester City", 
+                                      "Manchester United", "Newcastle", "Norwich City", "Sheffield United", 
+                                      "Southampton", "Tottenham Hotspur", "Watford", "West Bromwich Albion", 
+                                      "West Ham United", "Wolverhampton"), 
+                         fd_team = c("Bournemouth",  "Arsenal", "Aston Villa", "Brentford", "Brighton", "Burnley", 
+                                      "Cardiff", "Chelsea", "Crystal Palace", "Everton", "Fulham", 
+                                      "Huddersfield", "Leeds", "Leicester", "Liverpool", "Man City", 
+                                      "Man United", "Newcastle", "Norwich", "Sheffield United", "Southampton", 
+                                      "Tottenham", "Watford", "West Brom", "West Ham", "Wolves")), 
+                    class = c("spec_tbl_df","tbl_df", "tbl", "data.frame"), 
+                    row.names = c(NA, -26L), 
+                    spec = structure(list( cols = list(xg_team = structure(list(), class = c("collector_character", 
+                                          "collector")), fd_team = structure(list(), class = c("collector_character", 
+                                          "collector"))), default = structure(list(), class = c("collector_guess", 
+                                          "collector")), skip = 1L), class = "col_spec"))
+
+xg_dat_teams <- xg_dat %>%
+  inner_join(xg_lkp, by = c("team1" = "xg_team")) %>%
+  rename(home_team = fd_team) %>%
+  inner_join(xg_lkp, by = c("team2" = "xg_team")) %>%
+  rename(away_team = fd_team) %>%
+  select(home_team, away_team, date, spi1, spi2, xg1, xg2)
+
+all_data <- all_data %>%
+  inner_join(xg_dat_teams, by = c("home_team" = "home_team",
+                                  "away_team" = "away_team",
+                                  "date" = "date"))
+```
+
+```{r}
+
+# split up and then stick back together
+
+home_data <- all_data %>%
+  dplyr::select(date, match_id, season_id, home_team, ftr, fthg, hc, hs, hst, ac, spi1, spi2, xg1, xg2) %>%
+  mutate(team_type = "Home",
+         win_flag = case_when(ftr == "H" ~ 1, TRUE ~ 0),
+         draw_flag = case_when(ftr == "D" ~ 1, TRUE ~ 0)) %>%
+  rename(team = home_team,
+         full_time_goals = fthg,
+         corners = hc,
+         shots = hs,
+         shots_target = hst,
+         corners_conceded = ac,
+         spi = spi1,
+         spi_away = spi2,
+         xg = xg1,
+         xg_conceded = xg2)
+
+away_data <- all_data %>%
+  dplyr::select(date, match_id, season_id, away_team, ftr, ftag, ac, as, ast, hc, spi1, spi2, xg1, xg2) %>%
+  mutate(team_type = "Away",
+         win_flag = case_when(ftr == "A" ~ 1, TRUE ~ 0),
+         draw_flag = case_when(ftr == "D" ~ 1, TRUE ~ 0)) %>%
+  rename(team = away_team,
+         full_time_goals = ftag,
+         corners = ac,
+         shots = as,
+         shots_target = ast,
+         corners_conceded = hc,
+         spi = spi2,
+         spi_away = spi1,
+         xg = xg2,
+         xg_conceded = xg1
+         )
+
+long_data = bind_rows(home_data, away_data)
+
+## add features
+
+hc_model_data2 <- home_data %>%
+  arrange(team, date) %>%
+  group_by(season_id, team) %>%
+  mutate(lag_1_home_goals = lag(full_time_goals, n = 1),
+         lag_2_home_goals = lag(full_time_goals, n = 2),
+         lag_3_home_goals = lag(full_time_goals, n = 3),
+         lag_1_home_xg = lag(xg, n = 1),
+         lag_2_home_xg = lag(xg, n = 2),
+         lag_3_home_xg = lag(xg, n = 3)) %>%
+  ungroup() %>%
+  na.omit() %>%
+  select(match_id, starts_with("lag_"))
+
+ac_model_data2 <- away_data %>%
+  arrange(team, date) %>%
+  group_by(season_id, team) %>%
+  mutate(lag_1_away_goals = lag(full_time_goals, n = 1),
+         lag_2_away_goals = lag(full_time_goals, n = 2),
+         lag_3_away_goals = lag(full_time_goals, n = 3),
+         lag_1_away_xg = lag(xg, n = 1),
+         lag_2_away_xg = lag(xg, n = 2),
+         lag_3_away_xg = lag(xg, n = 3)) %>%
+  ungroup() %>%
+  na.omit() %>%
+  select(match_id, starts_with("lag_"))
+
+# merge back together
+
+model_dat <- all_data %>%
+  select(match_id, home_winner, b365h, b365a, b365d) %>%
+  inner_join(hc_model_data2, by = c("match_id")) %>%
+  inner_join(ac_model_data2, by = c("match_id"))
+
+```
+
+```{r}
+############################
+# model
+############################
+
+library(caret)
+library(gbm)
+
+
+# Define the partition (e.g. 75% of the data for training)
+trainIndex <- createDataPartition(model_dat$match_id, p = .75, 
+                                  list = FALSE, 
+                                  times = 1)
+
+# Split the dataset using the defined partition
+train_data <- model_dat[trainIndex, ,drop=FALSE]
+train_data <- train_data %>% select(-match_id, -b365h, -b365a, -b365d)
+tune_plus_val_data <- model_dat[-trainIndex, ,drop=FALSE]
+```
+
+```{r message=FALSE, warning=FALSE}
+objControl <- trainControl(method = 'cv',number = 3)
+myTuning <- expand.grid(n.trees = c(10000), 
+                        interaction.depth = c(10), 
+                        shrinkage = c(0.001), 
+                        n.minobsinnode = c(4))
+
+modelFitWinner <- train(as.factor(home_winner) ~ .,
+                        data=train_data,
+                        method="gbm",
+                        trControl = objControl,
+                        tuneGrid = myTuning,
+                        distribution="bernoulli",
+                        verbose=TRUE)
+```
+
+```{r}
+# predict here
+
+library(pROC)
+
+predicted_winner <- as.data.frame(predict(modelFitWinner, newdata = tune_plus_val_data, "prob"))
+
+tune_plus_val_data$probwinner <- predicted_winner$`1`
+tune_plus_val_data$predwinner <- ifelse(predicted_winner$`1` > predicted_winner$`0`, 1, 0)
+tune_plus_val_data$correct <- ifelse(tune_plus_val_data$home_winner == tune_plus_val_data$predwinner, 1, 0)
+
+sum(tune_plus_val_data$correct)/nrow(tune_plus_val_data)
+
+roccurve <- roc(tune_plus_val_data$home_winner ~ tune_plus_val_data$probwinner)
+auc(roccurve)
+plot(roccurve)
+```
+
+```{r}
+tune_plus_val_data <- tune_plus_val_data %>%
+  mutate(odds_home_win = 1+((1-probwinner)/probwinner)) %>%
+  mutate(diff_odds = (odds_home_win - b365h)/odds_home_win)
+
+# if the odds diff is positive then bet
+
+tune_plus_val_data <- tune_plus_val_data %>%
+  mutate(amount_bet = case_when(diff_odds > 0.8 ~ 1, TRUE ~ 0))
+
+# check if we won
+
+bets <- tune_plus_val_data %>%
+  filter(amount_bet == 1) %>%
+  mutate(did_we_win = case_when(home_winner == 1 ~ 1, TRUE ~ 0)) %>%
+  mutate(profit_loss = case_when(did_we_win == 1 ~ (b365h*amount_bet)-amount_bet,
+                                 TRUE ~ -1*amount_bet)) %>%
+  mutate(cumulative_profit_loss = cumsum(profit_loss)) %>%
+  mutate(betid = row_number())
+
+ggplot(bets, aes(x = betid, y = cumulative_profit_loss)) +
+  geom_line(size = 2, colour = "dodgerblue")
+```
