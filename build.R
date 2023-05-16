@@ -6,6 +6,7 @@ create_blog(title = "My Blog", dir = "~")
 create_post("Making Nice Tables with {gt}")
 create_post("Setting up R Markdown")
 create_post("Using Expected Goals to Predict Future Matches")
+create_post("Scraping Local Election Data")
 
 library(dplyr)
 library(readr)

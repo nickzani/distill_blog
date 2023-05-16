@@ -1,0 +1,219 @@
+---
+title: "Scraping Local Election Data with rvest"
+description: |
+  A short description of the post.
+author:
+  - name: Nick Zani
+    url: {}
+date: 2023-05-09
+output:
+  distill::distill_article:
+    self_contained: false
+---
+
+### Introduction
+
+[The Guardian](https://www.theguardian.com/politics/ng-interactive/2023/may/05/local-elections-2023-results-live-council-england) had a great results page on the recent council elections. I wanted to use this data for some visualisation projects, so firstly I needed to grab it...
+
+### Using rvest and xpaths
+
+The page is split into a few different parts, and there is some replication between them, so to avoid duplicating the data we needed to filter it. This was a good opportunity to use `xpaths`.
+
+The easiest way to do this is to use the developer tool in Chrome, copy the xpath you need, and then generalise it. For example, the first local election card name lives in: `//*[@id='le-full-results']/div[2]/div[1]/div[2]/div[1]/div[@class='le-council-card__name']`. Comparing this to the second, we can see that the third part of the xpath is changing, so we can generalise this with a `*`.
+
+Finally, I create a colouring column to use later.
+
+```{r eval=TRUE}
+library(tibble)
+library(dplyr)
+library(stringr)
+library(readr)
+library(tidyr)
+library(janitor)
+library(ggplot2)
+library(httr)
+library(rvest)
+
+url <- "https://www.theguardian.com/politics/ng-interactive/2023/may/05/local-elections-2023-results-live-council-england"
+
+x <- read_html(url)
+
+le_names <-  x %>% 
+  html_nodes(xpath = "//*[@id='le-full-results']/div[2]/*/div[2]/div[1]/div[@class='le-council-card__name']") %>% 
+  html_text() %>% 
+  as.data.frame()
+
+control <- x %>% 
+  html_nodes(xpath = "//*[@id='le-full-results']/div[2]/*/div[2]/div[1]/div[@class='le-council-control']") %>% 
+  html_text() %>% 
+  as.data.frame(stringsAsFactors = FALSE)
+
+seats_up <- x %>% 
+  html_nodes(xpath = "//*[@id='le-full-results']/div[2]/*/div[2]/div[2]") %>% 
+  html_text() %>% 
+  as.data.frame(stringsAsFactors = FALSE)
+
+table_list <- x %>% 
+  html_nodes(xpath = "//*[@id='le-full-results']/div[2]/*/div[2]/div[5]") %>% 
+  html_table()
+
+table_list_flat <- purrr::map_dfr(table_list, dplyr::bind_rows, .id = "id") %>% 
+  select(-X3) %>% 
+  mutate(id = as.numeric(id))
+
+names(table_list_flat) <- c("id", "party", "share", "change")
+
+control_names <- bind_cols(le_names, control, seats_up) %>% 
+  mutate(id = row_number())
+
+names(control_names) <- c("name", "control", "seatsup",  "id")
+
+control_names <- control_names %>% 
+  mutate(incumbant = str_extract(control, "^(Con|Lib Dem|Lab|NOC|Other|R|Green)")) %>% 
+  mutate(winner = case_when(str_detect(control, " to ") ~ str_extract(control, "(Con|Lib Dem|Lab|NOC|Other|R|Green)$"),
+                            TRUE ~ incumbant),
+         name = str_remove(name, "\\*")) %>% 
+  as_tibble()
+
+table_list_flat <- table_list_flat %>% 
+  inner_join(control_names) %>% 
+  mutate(colouring = case_when(party == "Lab" ~ "#c91c22",
+                               party == "Con" ~ "#0079b7",
+                               party == "Lib Dem" ~ "#e27e00",
+                               party == "Green" ~ "#33a22b",
+                               party == "Reform" ~ "#13bece",
+                               party == "UKIP" ~ "#890c6e",
+                               TRUE ~ "#949494"))
+
+```
+
+### Change of Control Counts
+
+Great, we have our data. Let's make a graph showing where the councils for the incumbent parties ended up.
+
+```{r fig.width = 9, fig.height = 5}
+
+control_changes <- control_names %>% 
+  count(incumbant, winner) %>% 
+  arrange(incumbant) %>% 
+  group_by(incumbant) %>% 
+  mutate(totals = sum(n)) %>% 
+  ungroup() %>% 
+  mutate(perc_impact = n/totals) %>% 
+  filter(incumbant != "R")
+
+control_changes %>%
+  ggplot(aes(x = winner, y = incumbant, fill = perc_impact)) +
+  geom_tile() +
+  scale_fill_distiller(palette = 4, direction = 1) +
+  theme_classic() +
+  labs(title = "Changes in Councils", 
+       subtitle = "Proportion of Incumbant\n",
+       fill = "Proportion",
+       x = "Winner",
+       y = "Incumbant\n") +
+  theme(strip.text = element_text(size = 18),
+        axis.title = element_text(size = 14),
+        axis.text.x = element_text(size = 14),
+        axis.text.y = element_text(size = 18),
+        plot.title = element_text(size = 18),
+        plot.subtitle = element_text(size = 14),
+        plot.caption = element_text(size = 12),
+        legend.text = element_text(size = 16),
+        legend.title = element_text(size = 18)
+  )
+
+```
+
+### Replicating the Guardian's Graphs
+
+The mini infographic for each council looks great. Let's try and replicate the first part of this.
+
+![](../../_data/guardian.jpg)
+
+We will make a function that takes in the council name and outputs a graph.
+
+Initially the function gets some key pieces of info, such as the title, subtitle and the colour of the top bar.
+
+Creating the top coloured bar is the hardest part, and in the end I created two plots, and stuck them together with `{patchwork}`.
+
+```{r fig.width = 9, fig.height = 4}
+
+library(patchwork)
+
+council_graph <- function(council_name){
+  
+  subtitle <- table_list_flat %>% 
+    filter(name == council_name) %>% 
+    pull(seatsup) %>% 
+    unique()
+  
+  control_text <- table_list_flat %>% 
+    filter(name == council_name) %>% 
+    pull(control) %>% 
+    unique()
+  
+  control_text <- paste0(control_text, "\n")
+  
+  winner <- table_list_flat %>% 
+    filter(name == council_name) %>% 
+    select(winner) %>% 
+    mutate(colouring = case_when(winner == "Lab" ~ "#c91c22",
+                               winner == "Con" ~ "#0079b7",
+                               winner == "Lib Dem" ~ "#e27e00",
+                               winner == "Green" ~ "#33a22b",
+                               winner == "Reform" ~ "#13bece",
+                               winner == "UKIP" ~ "#890c6e",
+                               TRUE ~ "#949494")) %>% 
+    pull(colouring) %>% 
+    unique()
+  
+  totals <- table_list_flat %>% 
+    filter(name == council_name) %>% 
+    summarise(tot = sum(share)) %>% 
+    pull(tot)
+  
+p1 <- table_list_flat %>% 
+    filter(name == council_name & share != 0) %>% 
+      ggplot(aes(x = factor(1), 
+                 y = share, 
+                 fill = reorder(colouring, share),
+                 label = share)) +
+      geom_bar(stat="identity", colour = "white", size = 1.5) +
+      coord_cartesian(xlim = c(0,1),  clip = 'off') +
+      annotate("text",  x=1.7, y = totals, label = control_text, vjust=1, hjust=1) +
+      coord_flip() +      
+      geom_text(data = table_list_flat %>% 
+                  filter(name == council_name & share != 0), 
+                aes(x = 0.48, y = share, label=share, fill = reorder(colouring, share)),
+                position = position_stack(vjust = 0.02)) +
+      scale_fill_identity() +
+      theme_void() +
+      labs(title = council_name, 
+           subtitle = subtitle,
+           x = "",
+           y = "") +
+      theme(plot.title = element_text(hjust = 0.057, vjust = -7),
+            plot.subtitle = element_text(hjust = 0.057, vjust = -7))
+
+p2 <- ggplot() +
+    theme_void() +
+    geom_segment(aes(x = 3, y = 0, xend = 3, yend = 20, fill = winner, colour = winner, size = 1.5)) +
+    scale_colour_identity() +
+    theme(legend.position = "none",
+          plot.margin = margin(0.1,0.5,0.1,0.5, "cm"),
+          axis.title.x=element_blank(),
+          axis.text.x=element_blank(),
+          axis.ticks.x=element_blank()) +
+    coord_cartesian(xlim = c(3,3),  clip = 'off') +
+    coord_flip()
+
+p2/p1 +
+   plot_layout(widths = c(4, 4), heights = unit(c(0.5, 5), c('cm', 'cm')))
+  
+}
+
+council_graph(council_name = "Arun")
+
+
+```
