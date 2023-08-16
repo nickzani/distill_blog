@@ -1,0 +1,110 @@
+---
+title: "Modelling Local Election Data"
+description: |
+  A short description of the post.
+author:
+  - name: Nick Zani
+    url: {}
+date: 2023-05-18
+output:
+  distill::distill_article:
+    self_contained: false
+---
+
+### Introduction
+
+Data
+
+### Modelling
+
+```{r eval=TRUE}
+library(tibble)
+library(dplyr)
+library(stringr)
+library(readr)
+library(tidyr)
+library(janitor)
+library(ggplot2)
+library(httr)
+library(rvest)
+
+election_data <- readRDS("./election_data.rds") %>% 
+  filter(seatsup == "all seats up") %>% 
+  mutate(original = share - change) %>% 
+  group_by(id) %>% 
+  mutate(original_prop = original/sum(share),
+         new_prop = share/sum(share)) %>% 
+  ungroup() %>% 
+  filter(!party %in% c("Reform", "Vacant", "UKIP", "R", "Lib", "Yorkshire")) %>% 
+  filter(winner != "R") %>% 
+  select(id, name, control, incumbant, winner, party, original, share, original_prop, new_prop) %>% 
+  pivot_wider(names_from = party, 
+              values_from = c(original, share, original_prop, new_prop), 
+              values_fill = 0) %>% 
+  clean_names()
+
+ggplot(election_data, aes(x=original_prop_con, y = new_prop_con)) +
+  geom_point() +
+  geom_abline(slope=1, intercept=0) + 
+  geom_smooth(method='lm', formula= y~x)
+
+ggplot(election_data, aes(x=original_prop_lab, y = new_prop_lab)) +
+  geom_point() +
+  geom_abline(slope=1, intercept=0) + 
+  geom_smooth(method='lm', formula= y~x)
+
+mod <- lm(new_prop_con ~ original_prop_con + original_prop_lab,
+          data = election_data)
+
+summary(mod)
+
+```
+
+```{r eval=TRUE}
+
+library(randomForest)
+library(caret)
+library(gbm)
+library(pROC)
+library(measures)
+
+# Define the partition (e.g. 75% of the data for training)
+trainIndex <- createDataPartition(election_data$id, p = .5, 
+                                  list = FALSE, 
+                                  times = 1)
+
+# Split the dataset using the defined partition
+train_data <- election_data[trainIndex, ,drop=FALSE]
+
+train_data <- train_data %>% 
+  select(-id, -name, -control)
+
+tune_plus_val_data <- election_data[-trainIndex, ,drop=FALSE]
+
+nrow(train_data)
+nrow(tune_plus_val_data)
+
+objControl <- trainControl(method = 'cv',number = 3)
+
+myTuning <- expand.grid(n.trees = c(1000), 
+                        interaction.depth = c(10), 
+                        shrinkage = c(0.0001), 
+                        n.minobsinnode = c(1))
+
+modelFitWinner <- train(as.factor(winner) ~ .,
+                        data=train_data,
+                        method="gbm",
+                        trControl = objControl,
+                        tuneGrid = myTuning,
+                        distribution="multinomial",
+                        verbose=TRUE)
+# predict here
+
+predicted_winner <- as.data.frame(predict(modelFitWinner, newdata = tune_plus_val_data, "prob"))
+tune_plus_val_data$predwinner <- colnames(predicted_winner)[apply(predicted_winner,1,which.max)]
+
+confusionMatrix(data = factor(tune_plus_val_data$predwinner),
+                reference = factor(tune_plus_val_data$winner)
+                )
+
+```

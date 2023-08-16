@@ -1,0 +1,66 @@
+---
+title: "Magnesium"
+description: |
+  A short description of the post.
+author:
+  - name: Nick Zani
+    url: {}
+date: 2023-05-26
+output:
+  distill::distill_article:
+    self_contained: false
+---
+
+
+### Introduction
+
+Data
+
+### Modelling
+
+```{r eval=TRUE}
+library(tibble)
+library(dplyr)
+library(stringr)
+library(readr)
+library(tidyr)
+library(janitor)
+library(ggplot2)
+library(httr)
+library(rvest)
+
+lines <- readL
+
+get_fitness_data <- xml2::read_xml('C:/Users/vi2073/Documents/GitHub/distill_blog/distill_nickzani/_posts/2023-05-26-magnesium/export.xml')
+  
+  readRDS("./election_data.rds") %>% 
+  filter(seatsup == "all seats up") %>% 
+  mutate(original = share - change) %>% 
+  group_by(id) %>% 
+  mutate(original_prop = original/sum(share),
+         new_prop = share/sum(share)) %>% 
+  ungroup() %>% 
+  filter(!party %in% c("Reform", "Vacant", "UKIP", "R", "Lib", "Yorkshire")) %>% 
+  filter(winner != "R") %>% 
+  select(id, name, control, incumbant, winner, party, original, share, original_prop, new_prop) %>% 
+  pivot_wider(names_from = party, 
+              values_from = c(original, share, original_prop, new_prop), 
+              values_fill = 0) %>% 
+  clean_names()
+
+ggplot(election_data, aes(x=original_prop_con, y = new_prop_con)) +
+  geom_point() +
+  geom_abline(slope=1, intercept=0) + 
+  geom_smooth(method='lm', formula= y~x)
+
+ggplot(election_data, aes(x=original_prop_lab, y = new_prop_lab)) +
+  geom_point() +
+  geom_abline(slope=1, intercept=0) + 
+  geom_smooth(method='lm', formula= y~x)
+
+mod <- lm(new_prop_con ~ original_prop_con + original_prop_lab,
+          data = election_data)
+
+summary(mod)
+
+```

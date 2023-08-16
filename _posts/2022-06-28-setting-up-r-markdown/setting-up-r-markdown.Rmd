@@ -23,7 +23,7 @@ Markdown is a great way of presenting output. Here is my setup to get the most o
 
 This can be created in the usual way - file/new file from the RStudio menu.
 
-![](../../_data/markdown_1.jpg)
+![](./markdown_1.jpg)
 
 ## Change the Settings
 
@@ -33,7 +33,7 @@ Clicking on the cog at the top brings up some different options. I usually chang
 - Preview in Viewer Pane
 - Chunk Output in Console
 
-![](../../_data/markdown_chunk.jpg)
+![](./markdown_chunk.jpg)
 
 ## Add in Tabset Classes
 
@@ -45,9 +45,9 @@ Tabsets allow readers to view the content of different sections by clicking the 
 
 Or in the visual editor:
 
-![](../../_data/tabset.jpg)
+![](./tabset.jpg)
 
 ## Bonus: Use Emojis to make your Tabs Looks Awesome 
 These can be pasted in from the Windows Emoji window:
 
-![](../../_data/markdown_output.jpg)
+![](./markdown_output.jpg)

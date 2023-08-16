@@ -13,37 +13,46 @@ library(gbm)
 library(pROC)
 library(measures)
 
+round_any = function(x, accuracy, f=round){f(x/ accuracy) * accuracy}
+
 ##################################
 # download the historic football data
 ##################################
 
-epl_2021_22 <- readr::read_csv('https://www.football-data.co.uk/mmz4281/2122/E0.csv') %>%
+epl_2022_23 <- readr::read_csv('https://www.football-data.co.uk/mmz4281/2223/E0.csv') %>%
   clean_names() %>%
   mutate(date = as.Date(date, format="%d/%m/%Y"),
          match_id = 1000 + row_number(),
+         season_id = 2023)
+
+epl_2021_22 <- readr::read_csv('https://www.football-data.co.uk/mmz4281/2122/E0.csv') %>%
+  clean_names() %>%
+  mutate(date = as.Date(date, format="%d/%m/%Y"),
+         match_id = 2000 + row_number(),
          season_id = 2022)
 
 epl_2020_21 <- readr::read_csv('https://www.football-data.co.uk/mmz4281/2021/E0.csv') %>%
   clean_names() %>%
   mutate(date = as.Date(date, format="%d/%m/%Y"),
-         match_id = 2000 + row_number(),
+         match_id = 3000 + row_number(),
          season_id = 2021)
 
 epl_2019_20 <- readr::read_csv('https://www.football-data.co.uk/mmz4281/1920/E0.csv') %>%
   clean_names() %>%
   mutate(date = as.Date(date, format="%d/%m/%Y"),
-         match_id = 3000 + row_number(),
+         match_id = 4000 + row_number(),
          season_id = 2020)
 
 epl_2018_19 <- readr::read_csv('https://www.football-data.co.uk/mmz4281/1819/E0.csv') %>%
   clean_names() %>%
   mutate(date = as.Date(date, format="%d/%m/%Y"),
-         match_id = 4000 + row_number(),
+         match_id = 5000 + row_number(),
          season_id = 2019)
 
 # put these all together in one long dataframe and create a flag to show which team had more corners
 
-all_data <- bind_rows(epl_2021_22, 
+all_data <- bind_rows(epl_2022_23,
+                      epl_2021_22, 
                       epl_2020_21, 
                       epl_2019_20, 
                       epl_2018_19) %>%
@@ -82,12 +91,12 @@ xg_lkp <- structure(list(xg_team = c("AFC Bournemouth", "Arsenal", "Aston Villa"
                            "Leeds United", "Leicester City", "Liverpool", "Manchester City", 
                            "Manchester United", "Newcastle", "Norwich City", "Sheffield United", 
                            "Southampton", "Tottenham Hotspur", "Watford", "West Bromwich Albion", 
-                           "West Ham United", "Wolverhampton"), 
+                           "West Ham United", "Wolverhampton", "Nottingham Forest"), 
                      fd_team = c("Bournemouth", "Arsenal", "Aston Villa", "Brentford", "Brighton", "Burnley", 
                                  "Cardiff", "Chelsea", "Crystal Palace", "Everton", "Fulham", 
                                   "Huddersfield", "Leeds", "Leicester", "Liverpool", "Man City", 
                                  "Man United", "Newcastle", "Norwich", "Sheffield United", "Southampton", 
-                                 "Tottenham", "Watford", "West Brom", "West Ham", "Wolves")), 
+                                 "Tottenham", "Watford", "West Brom", "West Ham", "Wolves", "Nott'm Forest")), 
                      class = c("spec_tbl_df", "tbl_df", "tbl", "data.frame"), 
                      row.names = c(NA, -26L), 
                      spec = structure(list(cols = list(xg_team = structure(list(), class = c("collector_character", "collector")), 
@@ -114,6 +123,7 @@ all_data <- all_data %>%
 
 nrow(all_data)
 
+#filter(all_data, is.na(importance1)) %>% View()
 #teams <- all_data %>% count(home_team)
 #xg_team <- xg_dat %>% count(team1)
 #write.csv(teams, "teams.csv")
@@ -265,12 +275,51 @@ model_dat <- all_data %>%
   inner_join(hc_model_data2, by = c("match_id")) %>%
   inner_join(ac_model_data2, by = c("match_id"))
 
+ncol(model_dat)
+nrow(model_dat)
+
+# add in some differences
+
+model_dat <- model_dat %>% 
+  mutate(d_1_corner = lag_1_home_corner-lag_1_away_corner,
+         d_2_corner = lag_2_home_corner-lag_2_away_corner,
+         d_3_corner = lag_3_home_corner-lag_3_away_corner,
+         d_1_xg = lag_1_home_xg-lag_1_away_xg,
+         d_2_xg = lag_2_home_xg-lag_2_away_xg,
+         d_3_xg = lag_3_home_xg-lag_3_away_xg,
+         d_1_xg_conceded = lag_1_home_xg_conceded-lag_1_away_xg_conceded,
+         d_2_xg_conceded = lag_2_home_xg_conceded-lag_2_away_xg_conceded,
+         d_3_xg_conceded = lag_3_home_xg_conceded-lag_3_away_xg_conceded,
+         d_1_spi = lag_1_home_spi-lag_1_away_spi,
+         d_2_spi = lag_2_home_spi-lag_2_away_spi,
+         d_3_spi = lag_3_home_spi-lag_3_away_spi,
+         spi_diff = current_away_spi - current_home_spi,
+         spi_diff_perc = (current_away_spi - current_home_spi)/current_home_spi,
+         imp_diff = current_away_importance - current_home_importance
+         )
+
 # output for regression model
 
 regression_dat <- all_data %>%
   select(match_id, home_corner_winner, hc, ac) %>%
   inner_join(hc_model_data2, by = c("match_id")) %>%
-  inner_join(ac_model_data2, by = c("match_id"))
+  inner_join(ac_model_data2, by = c("match_id")) %>% 
+  mutate(d_1_corner = lag_1_home_corner-lag_1_away_corner,
+         d_2_corner = lag_2_home_corner-lag_2_away_corner,
+         d_3_corner = lag_3_home_corner-lag_3_away_corner,
+         d_1_xg = lag_1_home_xg-lag_1_away_xg,
+         d_2_xg = lag_2_home_xg-lag_2_away_xg,
+         d_3_xg = lag_3_home_xg-lag_3_away_xg,
+         d_1_xg_conceded = lag_1_home_xg_conceded-lag_1_away_xg_conceded,
+         d_2_xg_conceded = lag_2_home_xg_conceded-lag_2_away_xg_conceded,
+         d_3_xg_conceded = lag_3_home_xg_conceded-lag_3_away_xg_conceded,
+         d_1_spi = lag_1_home_spi-lag_1_away_spi,
+         d_2_spi = lag_2_home_spi-lag_2_away_spi,
+         d_3_spi = lag_3_home_spi-lag_3_away_spi,
+         spi_diff = current_away_spi - current_home_spi,
+         spi_diff_perc = (current_away_spi - current_home_spi)/current_home_spi,
+         imp_diff = current_away_importance - current_home_importance
+  )
 
 # saveRDS(regression_dat, "regression_dat.rds")
 
@@ -283,16 +332,30 @@ trainIndex <- createDataPartition(model_dat$match_id, p = .75,
                                   list = FALSE, 
                                   times = 1)
 
+trainIndex_c <- createDataPartition(regression_dat$match_id, p = .75, 
+                                  list = FALSE, 
+                                  times = 1)
+
 # Split the dataset using the defined partition
 train_data <- model_dat[trainIndex, ,drop=FALSE]
 train_data <- train_data %>% select(-match_id)
 tune_plus_val_data <- model_dat[-trainIndex, ,drop=FALSE]
+
+# Split the dataset using the defined partition for regression
+train_data_c <- regression_dat[trainIndex_c, ,drop=FALSE]
+train_data_c <- train_data_c %>% select(-match_id)
+tune_plus_val_data_c <- regression_dat[-trainIndex_c, ,drop=FALSE]
 
 objControl <- trainControl(method = 'cv',number = 3)
 myTuning <- expand.grid(n.trees = c(12000), 
                         interaction.depth = c(10), 
                         shrinkage = c(0.0001), 
                         n.minobsinnode = c(4))
+
+myTuning_c <- expand.grid(n.trees = c(10000), 
+                          interaction.depth = c(10), 
+                          shrinkage = c(0.005), 
+                          n.minobsinnode = c(4))
 
 modelFitWinner <- train(as.factor(home_corner_winner) ~ .,
                         data=train_data,
@@ -301,19 +364,136 @@ modelFitWinner <- train(as.factor(home_corner_winner) ~ .,
                         tuneGrid = myTuning,
                         distribution="bernoulli",
                         verbose=TRUE)
-# predict here
+
+modelFitHC <- train(hc ~ .,
+                    data=train_data_c %>% select(-ac, -home_corner_winner),
+                    method="gbm",
+                    trControl = objControl,
+                    tuneGrid = myTuning_c,
+                    verbose=TRUE)
+
+modelFitAC <- train(ac ~ .,
+                    data=train_data_c %>% select(-hc, -home_corner_winner),
+                    method="gbm",
+                    trControl = objControl,
+                    tuneGrid = myTuning_c,
+                    verbose=TRUE)
+
+modelFitHC45 <- train(hco45 ~ .,
+                    data=train_data_c %>% 
+                        mutate(hco45 = as.factor(ifelse(hc > 4.5, 1, 0))) %>% 
+                        select(-ac, -hc, -home_corner_winner),
+                    method="gbm",
+                    distribution="bernoulli",
+                    trControl = objControl,
+                    tuneGrid = myTuning_c,
+                    verbose=TRUE)
+
+modelFitAC45 <- train(ac ~ .,
+                    data=train_data_c %>% 
+                      mutate(aco45 = ifelse(ac > 4.5, 1, 0)) %>% 
+                      select(-ac, -hc, -home_corner_winner),
+                    method="gbm",
+                    trControl = objControl,
+                    tuneGrid = myTuning_c,
+                    verbose=TRUE)
+
+
+#############################################
+# predict winner here
+#############################################
 
 predicted_winner <- as.data.frame(predict(modelFitWinner, newdata = tune_plus_val_data, "prob"))
 
 tune_plus_val_data$probwinner <- predicted_winner$`1`
 tune_plus_val_data$predwinner <- ifelse(predicted_winner$`1` > predicted_winner$`0`, 1, 0)
 tune_plus_val_data$correct <- ifelse(tune_plus_val_data$home_corner_winner == tune_plus_val_data$predwinner, 1, 0)
-
 sum(tune_plus_val_data$correct)/nrow(tune_plus_val_data)
 
 roccurve <- roc(tune_plus_val_data$home_corner_winner ~ tune_plus_val_data$probwinner)
 auc(roccurve)
 plot(roccurve)
+
+tune_plus_val_data %>%
+  mutate(rounded_prob = round_any(probwinner, 0.05)) %>%
+  group_by(rounded_prob) %>%
+  summarise(cnt = n(),
+            winners = sum(home_corner_winner),
+            perc_correct = winners/cnt) %>%
+  ungroup() %>%
+  ggplot() +
+  geom_point(aes(x = rounded_prob, y = perc_correct)) +
+  geom_abline(intercept=0, slope=1)
+
+winner_perf <- lm(home_corner_winner ~ probwinner, data = tune_plus_val_data)
+summary(winner_perf)
+
+# brier score
+Brier(tune_plus_val_data$probwinner, tune_plus_val_data$home_corner_winner, negative = 0, positive = 1)
+
+#############################################
+# predict home corners
+#############################################
+
+predicted_hc <- as.data.frame(predict(modelFitHC, newdata = tune_plus_val_data_c))
+names(predicted_hc) <- c("pred_hc")
+tune_plus_val_data_c$pred_hc <- predicted_hc$pred_hc
+
+ggplot(tune_plus_val_data_c) +
+  geom_point(aes(x = pred_hc, y = hc)) +
+  geom_abline(intercept=0, slope=1)
+
+hc_perf <- lm(hc ~ pred_hc, data = tune_plus_val_data_c)
+summary(hc_perf)
+
+#############################################
+# predict away corners
+#############################################
+
+predicted_ac <- as.data.frame(predict(modelFitAC, newdata = tune_plus_val_data_c))
+names(predicted_ac) <- c("pred_ac")
+tune_plus_val_data_c$pred_ac <- predicted_ac$pred_ac
+
+ggplot(tune_plus_val_data_c) +
+  geom_point(aes(x = pred_ac, y = ac)) +
+  geom_abline(intercept=0, slope=1)
+
+ac_perf <- lm(ac ~ pred_ac, data = tune_plus_val_data_c)
+summary(ac_perf)
+
+#############################################
+# predict > 4.5 home corners
+#############################################
+
+predicted_winner_45 <- as.data.frame(predict(modelFitHC45, newdata = tune_plus_val_data_c, "prob"))
+
+tune_plus_val_data_c$prob_hc45 <- predicted_winner_45$`1`
+tune_plus_val_data_c$pred_hco45 <- ifelse(tune_plus_val_data_c$prob_hc45 > 0.5, 1, 0)
+tune_plus_val_data_c$correct_hc45 <- ifelse(tune_plus_val_data_c$pred_hco45 == 1 & tune_plus_val_data_c$hc > 4.5, 1, 0)
+sum(tune_plus_val_data_c$correct_hc45)/nrow(tune_plus_val_data_c)
+
+tune_plus_val_data_c$o_hc45 <- ifelse(tune_plus_val_data_c$hc > 4.5, 1, 0)
+
+roccurve <- roc(tune_plus_val_data_c$o_hc45 ~ tune_plus_val_data_c$prob_hc45)
+auc(roccurve)
+plot(roccurve)
+
+tune_plus_val_data_c %>%
+  mutate(rounded_prob = round_any(prob_hc45, 0.05)) %>%
+  group_by(rounded_prob) %>%
+  summarise(cnt = n(),
+            act_corners = sum(hc),
+            avg_corners = act_corners/cnt) %>%
+  ungroup() %>%
+  ggplot() +
+  geom_point(aes(x = rounded_prob, y = avg_corners)) +
+  geom_abline(intercept=0, slope=1)
+
+o45_perf <- lm(hc ~ prob_hc45, data = tune_plus_val_data_c)
+summary(o45_perf)
+
+# brier score
+Brier(tune_plus_val_data_c$prob_hc45, tune_plus_val_data_c$o_hc45, negative = 0, positive = 1)
 
 ## without xg = 0.6504
 ## xg = 0.7295
@@ -325,37 +505,29 @@ Brier(tune_plus_val_data$probwinner, tune_plus_val_data$home_corner_winner, nega
 ## xg = 0.2263204
 ## xg plus additional historic = 0.2183327
 
-mycoords <- coords(roccurve, "all")
+## HC here
 
-plot(mycoords[,"threshold"], mycoords[,"specificity"], type="l", col="red", xlab="Cutoff", ylab="Performance")
-lines(mycoords[,"threshold"], mycoords[,"sensitivity"], type="l", col="blue")
-legend(100, 0.4, c("Specificity", "Sensitivity"), 
-       col=c("red", "blue"), lty=1)
 
-coords(roccurve, "best", best.method="youden")
 
-best.coords <- coords(roccurve, "best", best.method="youden")
-abline(v=best.coords["threshold"], lty=2, col="grey")
-abline(h=best.coords["specificity"], lty=2, col="red")
-abline(h=best.coords["sensitivity"], lty=2, col="blue")
+## AC here
 
-round_any = function(x, accuracy, f=round){f(x/ accuracy) * accuracy}
 
-tune_plus_val_data %>%
-  mutate(rounded_prob = round_any(probwinner, 0.05)) %>%
-  group_by(rounded_prob) %>%
-  summarise(cnt = n(),
-            winners = sum(home_corner_winner),
-            perc_correct = winners/cnt) %>%
-  ungroup() %>%
-  filter(rounded_prob > 0.25) %>%
-    ggplot() +
-    geom_point(aes(x = rounded_prob, y = perc_correct)) +
-    geom_abline(intercept=0, slope=1)
 
 ###########################################################
 ### train the model on the full data here
 ###########################################################
+
+objControl <- trainControl(method = 'cv',number = 3)
+
+myTuning <- expand.grid(n.trees = c(12000), 
+                        interaction.depth = c(10), 
+                        shrinkage = c(0.0001), 
+                        n.minobsinnode = c(4))
+
+myTuning_c <- expand.grid(n.trees = c(10000), 
+                          interaction.depth = c(10), 
+                          shrinkage = c(0.005), 
+                          n.minobsinnode = c(4))
 
 modelFitWinner <- train(as.factor(home_corner_winner) ~ .,
                         data=model_dat,
@@ -365,28 +537,47 @@ modelFitWinner <- train(as.factor(home_corner_winner) ~ .,
                         distribution="bernoulli",
                         verbose=TRUE)
 
-myTuning_c <- expand.grid(n.trees = c(10000), 
-                        interaction.depth = c(10), 
-                        shrinkage = c(0.005), 
-                        n.minobsinnode = c(4))
-
 modelFitHC <- train(hc ~ .,
-                    data=regression_dat %>% select(-ac, -home_corner_winner),
+                    data=regression_dat %>% 
+                      select(-ac, -home_corner_winner),
                     method="gbm",
                     trControl = objControl,
                     tuneGrid = myTuning_c,
                     verbose=TRUE)
 
 modelFitAC <- train(ac ~ .,
-                    data=regression_dat %>% select(-hc, -home_corner_winner),
+                    data=regression_dat %>% 
+                      select(-hc, -home_corner_winner),
                     method="gbm",
                     trControl = objControl,
                     tuneGrid = myTuning_c,
                     verbose=TRUE)
 
-saveRDS(modelFitWinner, file = "C:/Users/vi2073/Documents/GitHub/distill_blog/distill_nickzani/scripts/model_xg.RDS")
-saveRDS(modelFitHC, file = "C:/Users/vi2073/Documents/GitHub/distill_blog/distill_nickzani/scripts/model_hc.RDS")
-saveRDS(modelFitAC, file = "C:/Users/vi2073/Documents/GitHub/distill_blog/distill_nickzani/scripts/model_ac.RDS")
+modelFitHC45 <- train(hco45 ~ .,
+                      data=regression_dat %>% 
+                        mutate(hco45 = as.factor(ifelse(hc > 4.5, 1, 0))) %>% 
+                        select(-ac, -hc, -home_corner_winner),
+                      method="gbm",
+                      distribution="bernoulli",
+                      trControl = objControl,
+                      tuneGrid = myTuning_c,
+                      verbose=TRUE)
+
+modelFitAC45 <- train(aco45 ~ .,
+                      data=regression_dat %>% 
+                        mutate(aco45 = as.factor(ifelse(ac > 4.5, 1, 0))) %>% 
+                        select(-ac, -hc, -home_corner_winner),
+                      method="gbm",
+                      trControl = objControl,
+                      tuneGrid = myTuning_c,
+                      verbose=TRUE)
+
+
+saveRDS(modelFitWinner, file = "C:/Users/vi2073/Documents/GitHub/distill_blog/distill_nickzani/scripts/model_xg_2023.RDS")
+saveRDS(modelFitHC, file = "C:/Users/vi2073/Documents/GitHub/distill_blog/distill_nickzani/scripts/model_hc_2023.RDS")
+saveRDS(modelFitAC, file = "C:/Users/vi2073/Documents/GitHub/distill_blog/distill_nickzani/scripts/model_ac_2023.RDS")
+saveRDS(modelFitHC45, file = "C:/Users/vi2073/Documents/GitHub/distill_blog/distill_nickzani/scripts/model_hc45_2023.RDS")
+saveRDS(modelFitAC45, file = "C:/Users/vi2073/Documents/GitHub/distill_blog/distill_nickzani/scripts/model_ac45_2023.RDS")
 
 ## try with xgboost
 

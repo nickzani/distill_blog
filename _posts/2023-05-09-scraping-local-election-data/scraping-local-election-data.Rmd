@@ -1,7 +1,7 @@
 ---
 title: "Scraping Local Election Data with rvest"
 description: |
-  A short description of the post.
+  Using the {rvest} package to scrape local election data, and {ggplot} to replicate some of the Guardian graphs.
 author:
   - name: Nick Zani
     url: {}
@@ -129,7 +129,7 @@ control_changes %>%
 
 The mini infographic for each council looks great. Let's try and replicate the first part of this.
 
-![](../../_data/guardian.jpg)
+![](./guardian.jpg)
 
 We will make a function that takes in the council name and outputs a graph.
 
@@ -181,20 +181,21 @@ p1 <- table_list_flat %>%
                  label = share)) +
       geom_bar(stat="identity", colour = "white", size = 1.5) +
       coord_cartesian(xlim = c(0,1),  clip = 'off') +
-      annotate("text",  x=1.7, y = totals, label = control_text, vjust=1, hjust=1) +
+      annotate("text",  x=1.7, y = totals, label = control_text, vjust=1, hjust=1, size = 6) +
       coord_flip() +      
       geom_text(data = table_list_flat %>% 
                   filter(name == council_name & share != 0), 
                 aes(x = 0.48, y = share, label=share, fill = reorder(colouring, share)),
-                position = position_stack(vjust = 0.02)) +
+                position = position_stack(vjust = 0.02),
+                size = 6) +
       scale_fill_identity() +
       theme_void() +
       labs(title = council_name, 
            subtitle = subtitle,
            x = "",
            y = "") +
-      theme(plot.title = element_text(hjust = 0.057, vjust = -7),
-            plot.subtitle = element_text(hjust = 0.057, vjust = -7))
+      theme(plot.title = element_text(hjust = 0.057, vjust = -7, margin=margin(0,0,3,0), size = 20),
+            plot.subtitle = element_text(hjust = 0.057, vjust = -7, size = 16))
 
 p2 <- ggplot() +
     theme_void() +

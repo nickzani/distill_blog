@@ -24,7 +24,7 @@ library(stringr)
 
 # Data Range
 sdate <- as.Date("2020-03-01")
-edate <- as.Date("2022-01-31")
+edate <- as.Date("2023-01-31")
  
 # pull data function
 
@@ -88,5 +88,50 @@ ggplot(merged_baseline, aes(x = dt, y = perc_change, group = symbol, colour = sy
         axis.ticks.y.right = element_line(color = "white"),
         axis.text.y.right = element_text(color = "royalblue4")
   )
+
+```
+
+Get THG data
+
+```{r}
+
+# Data Range
+sdate <- as.Date("2023-01-01")
+edate <- as.Date("2023-04-01")
+ 
+# pull data function
+
+get_full_stock_data <- function(symbol, startdate, enddate){
+  
+  getSymbols(symbol, from=startdate, to=enddate, auto.assign = FALSE) %>%
+    as.data.frame() %>%
+    clean_names() %>%
+    rownames_to_column()
+  
+}
+
+thg <- get_full_stock_data("THG", sdate, edate) %>% 
+  select(rowname, thg_adjusted) %>% 
+  mutate(dow = weekdays(as.Date(rowname)),
+         log_return = log(thg_adjusted/lag(thg_adjusted)),
+         dow = factor(dow, levels = c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"))) %>% 
+  na.omit() %>% 
+  group_by(dow) %>% 
+  summarise(mean_lg = mean(log_return))
+
+ggplot(thg, aes(x = dow, y = mean_lg)) + geom_col()
+
+thg_wkly <- get_full_stock_data("THG", sdate, edate) %>% 
+  select(rowname, thg_adjusted) %>% 
+  mutate(dow = weekdays(as.Date(rowname)),
+         log_return = log(thg_adjusted/lag(thg_adjusted)),
+         dow = factor(dow, levels = c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")),
+         wknum = lubridate::isoweek(as.Date(rowname))) %>% 
+  na.omit() %>% 
+  group_by(wknum, dow) %>% 
+  summarise(mean_lg = mean(log_return))
+
+ggplot(thg_wkly, aes(x = dow, y = mean_lg)) + geom_col() + facet_wrap(~wknum)
+  
 
 ```

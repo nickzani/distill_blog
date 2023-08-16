@@ -23,32 +23,41 @@ future_games <- data.frame(home_team = c("Man City", "Nott'm Forest", "Liverpool
                            date = c(rep("12/11/2022", 8), rep("13/11/2022", 2))
                            )
 
-epl_2021_22 <- readr::read_csv('https://www.football-data.co.uk/mmz4281/2223/E0.csv') %>%
+epl_2022_23 <- readr::read_csv('https://www.football-data.co.uk/mmz4281/2223/E0.csv') %>%
   clean_names() %>%
-  bind_rows(future_games) %>%
   mutate(date = as.Date(date, format="%d/%m/%Y"),
          match_id = 1000 + row_number(),
-         season_id = 2022)
+         season_id = 2023)
 
-epl_2020_21 <- readr::read_csv('https://www.football-data.co.uk/mmz4281/2122/E0.csv') %>%
+epl_2021_22 <- readr::read_csv('https://www.football-data.co.uk/mmz4281/2122/E0.csv') %>%
   clean_names() %>%
   mutate(date = as.Date(date, format="%d/%m/%Y"),
          match_id = 2000 + row_number(),
-         season_id = 2021)
+         season_id = 2022)
 
-epl_2019_20 <- readr::read_csv('https://www.football-data.co.uk/mmz4281/2021/E0.csv') %>%
+epl_2020_21 <- readr::read_csv('https://www.football-data.co.uk/mmz4281/2021/E0.csv') %>%
   clean_names() %>%
   mutate(date = as.Date(date, format="%d/%m/%Y"),
          match_id = 3000 + row_number(),
-         season_id = 2020)
+         season_id = 2021)
 
-epl_2018_19 <- readr::read_csv('https://www.football-data.co.uk/mmz4281/1920/E0.csv') %>%
+epl_2019_20 <- readr::read_csv('https://www.football-data.co.uk/mmz4281/1920/E0.csv') %>%
   clean_names() %>%
   mutate(date = as.Date(date, format="%d/%m/%Y"),
          match_id = 4000 + row_number(),
+         season_id = 2020)
+
+epl_2018_19 <- readr::read_csv('https://www.football-data.co.uk/mmz4281/1819/E0.csv') %>%
+  clean_names() %>%
+  mutate(date = as.Date(date, format="%d/%m/%Y"),
+         match_id = 5000 + row_number(),
          season_id = 2019)
 
-all_data <- bind_rows(epl_2021_22, epl_2020_21, epl_2019_20, epl_2018_19) %>%
+all_data <- bind_rows(epl_2022_23,
+                      epl_2021_22, 
+                      epl_2020_21, 
+                      epl_2019_20, 
+                      epl_2018_19) %>%
   mutate(home_corner_winner = case_when(hc > ac ~ 1, TRUE ~ 0))
 
 ##################################
@@ -59,8 +68,24 @@ xg_dat <- readr::read_csv('https://projects.fivethirtyeight.com/soccer-api/club/
   clean_names() %>%
   filter(league == "Barclays Premier League")
 
-xg_lkp <- readr::read_csv('C:/Users/vi2073/Documents/GitHub/distill_blog/distill_nickzani/scripts/xg_team_lkp.csv') %>%
-  clean_names()
+xg_lkp <- structure(list(xg_team = c("AFC Bournemouth", "Arsenal", "Aston Villa", 
+                                     "Brentford", "Brighton and Hove Albion", "Burnley", "Cardiff City", 
+                                     "Chelsea", "Crystal Palace", "Everton", "Fulham", "Huddersfield Town", 
+                                     "Leeds United", "Leicester City", "Liverpool", "Manchester City", 
+                                     "Manchester United", "Newcastle", "Norwich City", "Sheffield United", 
+                                     "Southampton", "Tottenham Hotspur", "Watford", "West Bromwich Albion", 
+                                     "West Ham United", "Wolverhampton", "Nottingham Forest"), 
+                         fd_team = c("Bournemouth", "Arsenal", "Aston Villa", "Brentford", "Brighton", "Burnley", 
+                                     "Cardiff", "Chelsea", "Crystal Palace", "Everton", "Fulham", 
+                                     "Huddersfield", "Leeds", "Leicester", "Liverpool", "Man City", 
+                                     "Man United", "Newcastle", "Norwich", "Sheffield United", "Southampton", 
+                                     "Tottenham", "Watford", "West Brom", "West Ham", "Wolves", "Nott'm Forest")), 
+                    class = c("spec_tbl_df", "tbl_df", "tbl", "data.frame"), 
+                    row.names = c(NA, -26L), 
+                    spec = structure(list(cols = list(xg_team = structure(list(), class = c("collector_character", "collector")), 
+                                                      fd_team = structure(list(), class = c("collector_character",  "collector"))), 
+                                          default = structure(list(), class = c("collector_guess", "collector")), skip = 1L), class = "col_spec")
+)
 
 xg_dat_teams <- xg_dat %>%
   inner_join(xg_lkp, by = c("team1" = "xg_team")) %>%
@@ -237,6 +262,26 @@ model_dat <- all_data %>%
   select(match_id, home_corner_winner) %>%
   inner_join(hc_model_data2, by = c("match_id")) %>%
   inner_join(ac_model_data2, by = c("match_id"))
+
+# add in some differences
+
+model_dat <- model_dat %>% 
+  mutate(d_1_corner = lag_1_home_corner-lag_1_away_corner,
+         d_2_corner = lag_2_home_corner-lag_2_away_corner,
+         d_3_corner = lag_3_home_corner-lag_3_away_corner,
+         d_1_xg = lag_1_home_xg-lag_1_away_xg,
+         d_2_xg = lag_2_home_xg-lag_2_away_xg,
+         d_3_xg = lag_3_home_xg-lag_3_away_xg,
+         d_1_xg_conceded = lag_1_home_xg_conceded-lag_1_away_xg_conceded,
+         d_2_xg_conceded = lag_2_home_xg_conceded-lag_2_away_xg_conceded,
+         d_3_xg_conceded = lag_3_home_xg_conceded-lag_3_away_xg_conceded,
+         d_1_spi = lag_1_home_spi-lag_1_away_spi,
+         d_2_spi = lag_2_home_spi-lag_2_away_spi,
+         d_3_spi = lag_3_home_spi-lag_3_away_spi,
+         spi_diff = current_away_spi - current_home_spi,
+         spi_diff_perc = (current_away_spi - current_home_spi)/current_home_spi,
+         imp_diff = current_away_importance - current_home_importance
+  )
 
 # get pred file
 
