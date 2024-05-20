@@ -12,6 +12,7 @@ library(caret)
 library(gbm)
 library(pROC)
 library(measures)
+library(rvest)
 
 round_any = function(x, accuracy, f=round){f(x/ accuracy) * accuracy}
 
@@ -77,42 +78,39 @@ all_data %>% mutate(home_corner_winner = case_when(hc > ac ~ "H",
 
 ##################################
 # download the xg here
+# replace the no longer used 538 data
 ##################################
 
-xg_dat <- readr::read_csv('https://projects.fivethirtyeight.com/soccer-api/club/spi_matches.csv') %>%
-  clean_names() %>%
-  filter(league == "Barclays Premier League")
+xg_22_23 <- read_html("https://fbref.com/en/comps/9/2022-2023/schedule/2022-2023-Premier-League-Scores-and-Fixtures") %>% html_table(fill = TRUE)
+xg_21_22 <- read_html("https://fbref.com/en/comps/9/2021-2022/schedule/2021-2022-Premier-League-Scores-and-Fixtures") %>% html_table(fill = TRUE)
+xg_20_21 <- read_html("https://fbref.com/en/comps/9/2020-2021/schedule/2020-2021-Premier-League-Scores-and-Fixtures") %>% html_table(fill = TRUE)
+xg_19_20 <- read_html("https://fbref.com/en/comps/9/2019-2020/schedule/2019-2020-Premier-League-Scores-and-Fixtures") %>% html_table(fill = TRUE)
+xg_18_19 <- read_html("https://fbref.com/en/comps/9/2018-2019/schedule/2018-2019-Premier-League-Scores-and-Fixtures") %>% html_table(fill = TRUE)
 
-# the 538 expected goals team names are different to the football data ones so will make a lookup between the two
+xg_dat <- bind_rows(xg_22_23[1], xg_21_22[1], xg_20_21[1], xg_19_20[1], xg_18_19[1]) 
 
-xg_lkp <- structure(list(xg_team = c("AFC Bournemouth", "Arsenal", "Aston Villa", 
-                           "Brentford", "Brighton and Hove Albion", "Burnley", "Cardiff City", 
-                           "Chelsea", "Crystal Palace", "Everton", "Fulham", "Huddersfield Town", 
-                           "Leeds United", "Leicester City", "Liverpool", "Manchester City", 
-                           "Manchester United", "Newcastle", "Norwich City", "Sheffield United", 
-                           "Southampton", "Tottenham Hotspur", "Watford", "West Bromwich Albion", 
-                           "West Ham United", "Wolverhampton", "Nottingham Forest"), 
-                     fd_team = c("Bournemouth", "Arsenal", "Aston Villa", "Brentford", "Brighton", "Burnley", 
-                                 "Cardiff", "Chelsea", "Crystal Palace", "Everton", "Fulham", 
-                                  "Huddersfield", "Leeds", "Leicester", "Liverpool", "Man City", 
-                                 "Man United", "Newcastle", "Norwich", "Sheffield United", "Southampton", 
-                                 "Tottenham", "Watford", "West Brom", "West Ham", "Wolves", "Nott'm Forest")), 
-                     class = c("spec_tbl_df", "tbl_df", "tbl", "data.frame"), 
-                     row.names = c(NA, -26L), 
-                     spec = structure(list(cols = list(xg_team = structure(list(), class = c("collector_character", "collector")), 
-                                                       fd_team = structure(list(), class = c("collector_character",  "collector"))), 
-                                           default = structure(list(), class = c("collector_guess", "collector")), skip = 1L), class = "col_spec")
-                     )
+xg_dat <- xg_dat %>% 
+  mutate(date = as.Date(Date),
+         attendance = as.numeric(str_remove(Attendance, ","))) %>% 
+  rename(xg_home = xG...6,
+         xg_away = xG...8,
+         home = Home,
+         away = Away) %>% 
+  select(date, home, away, xg_home, xg_away, attendance) %>% 
+  clean_names() %>% 
+  filter(!is.na(date))
 
-xg_lkp <- readr::read_csv('C:/Users/vi2073/Documents/GitHub/distill_blog/distill_nickzani/scripts/xg_team_lkp.csv') %>%
+# the expected goals team names are different to the football data ones so will make a lookup between the two
+
+xg_lkp <- readr::read_csv('C:/Users/vi2073/Documents/GitHub/distill_blog/distill_nickzani/scripts/xg_team_lkp_2.csv') %>%
   clean_names()
 
 xg_dat_teams <- xg_dat %>%
-  inner_join(xg_lkp, by = c("team1" = "xg_team")) %>%
+  inner_join(xg_lkp, by = c("home" = "xg_team")) %>%
   rename(home_team = fd_team) %>%
-  inner_join(xg_lkp, by = c("team2" = "xg_team")) %>%
+  inner_join(xg_lkp, by = c("away" = "xg_team")) %>%
   rename(away_team = fd_team) %>%
-  select(home_team, away_team, date, spi1, spi2, xg1, xg2, nsxg1, nsxg2, importance1, importance2)
+  select(home_team, away_team, date, xg_home, xg_away, attendance)
 
 nrow(all_data)
 
@@ -132,7 +130,7 @@ nrow(all_data)
 # split up and then stick back together
 
 home_data <- all_data %>%
-  dplyr::select(date, match_id, season_id, home_team, ftr, fthg, ftag, hc, hs, as, hst, ac, hy, spi1, spi2, xg1, xg2, nsxg1, nsxg2, importance1, importance2) %>%
+  dplyr::select(date, match_id, season_id, home_team, ftr, fthg, ftag, hc, hs, as, hst, ac, hy, xg_home, xg_away, attendance) %>%
   mutate(team_type = "Home",
          win_flag = case_when(ftr == "H" ~ 1, TRUE ~ 0),
          draw_flag = case_when(ftr == "D" ~ 1, TRUE ~ 0)) %>%
@@ -144,16 +142,11 @@ home_data <- all_data %>%
          shots_conceded = as,
          shots_target = hst,
          corners_conceded = ac,
-         spi = spi1,
-         spi_away = spi2,
-         xg = xg1,
-         xg_conceded = xg2,
-         nsxg = nsxg1,
-         nsxg_conceded = nsxg2,
-         importance = importance1)
+         xg = xg_home,
+         xg_conceded = xg_away)
 
 away_data <- all_data %>%
-  dplyr::select(date, match_id, season_id, away_team, ftr, ftag, fthg, ac, as, hs, ast, hc, ay, spi1, spi2, xg1, xg2, nsxg1, nsxg2, importance1, importance2) %>%
+  dplyr::select(date, match_id, season_id, away_team, ftr, ftag, fthg, ac, as, hs, ast, hc, ay, xg_home, xg_away, attendance) %>%
   mutate(team_type = "Away",
          win_flag = case_when(ftr == "A" ~ 1, TRUE ~ 0),
          draw_flag = case_when(ftr == "D" ~ 1, TRUE ~ 0)) %>%
@@ -165,13 +158,8 @@ away_data <- all_data %>%
          shots_conceded = hs,
          shots_target = ast,
          corners_conceded = hc,
-         spi = spi2,
-         spi_away = spi1,
-         xg = xg2,
-         xg_conceded = xg1,
-         nsxg = nsxg2,
-         nsxg_conceded = nsxg1,
-         importance = importance2
+         xg = xg_away,
+         xg_conceded = xg_home
          )
 
 long_data = bind_rows(home_data, away_data)
@@ -196,29 +184,12 @@ hc_model_data2 <- home_data %>%
          lag_1_home_goals_conceded = lag(goals_conceded, n = 1),
          lag_2_home_goals_conceded = lag(goals_conceded, n = 2),
          lag_3_home_goals_conceded = lag(goals_conceded, n = 3),
-         lag_1_home_spi = lag(spi, n = 1),
-         lag_2_home_spi = lag(spi, n = 2),
-         lag_3_home_spi = lag(spi, n = 3),
-         lag_1_home_against_spi = lag(spi_away, n = 1),
-         lag_2_home_against_spi = lag(spi_away, n = 2),
-         lag_3_home_against_spi = lag(spi_away, n = 3),
          lag_1_home_xg = lag(xg, n = 1),
          lag_2_home_xg = lag(xg, n = 2),
          lag_3_home_xg = lag(xg, n = 3),
          lag_1_home_xg_conceded = lag(xg_conceded),
          lag_2_home_xg_conceded = lag(xg_conceded, n = 2),
-         lag_3_home_xg_conceded = lag(xg_conceded, n = 3),
-         lag_1_home_nsxg = lag(nsxg, n = 1),
-         lag_2_home_nsxg = lag(nsxg, n = 2),
-         lag_3_home_nsxg = lag(nsxg, n = 3),
-         lag_1_home_importance = lag(importance, n = 1),
-         lag_2_home_importance = lag(importance, n = 2),
-         lag_3_home_importance = lag(importance, n = 3),
-         lag_1_home_nsxg_conceded = lag(nsxg, n = 1),
-         lag_2_home_nsxg_conceded = lag(nsxg, n = 2),
-         lag_3_home_nsxg_conceded = lag(nsxg, n = 3),
-         current_home_importance = importance,
-         current_home_spi = spi) %>%
+         lag_3_home_xg_conceded = lag(xg_conceded, n = 3)) %>%
   ungroup() %>%
   na.omit() %>%
   select(match_id, starts_with("lag_"), contains("current"))
@@ -241,29 +212,12 @@ ac_model_data2 <- away_data %>%
          lag_1_away_goals_conceded = lag(goals_conceded, n = 1),
          lag_2_away_goals_conceded = lag(goals_conceded, n = 2),
          lag_3_away_goals_conceded = lag(goals_conceded, n = 3),
-         lag_1_away_spi = lag(spi, n = 1),
-         lag_2_away_spi = lag(spi, n = 2),
-         lag_3_away_spi = lag(spi, n = 3),
-         lag_1_away_against_spi = lag(spi_away, n = 1),
-         lag_2_away_against_spi = lag(spi_away, n = 2),
-         lag_3_away_against_spi = lag(spi_away, n = 3),
          lag_1_away_xg = lag(xg, n = 1),
          lag_2_away_xg = lag(xg, n = 2),
          lag_3_away_xg = lag(xg, n = 3),
          lag_1_away_xg_conceded = lag(xg_conceded),
          lag_2_away_xg_conceded = lag(xg_conceded, n = 2),
-         lag_3_away_xg_conceded = lag(xg_conceded, n = 3),
-         lag_1_away_nsxg = lag(nsxg, n = 1),
-         lag_2_away_nsxg = lag(nsxg, n = 2),
-         lag_3_away_nsxg = lag(nsxg, n = 3),
-         lag_1_away_importance = lag(importance, n = 1),
-         lag_2_away_importance = lag(importance, n = 2),
-         lag_3_away_importance = lag(importance, n = 3),
-         lag_1_away_nsxg_conceded = lag(nsxg_conceded),
-         lag_2_away_nsxg_conceded = lag(nsxg_conceded, n = 2),
-         lag_3_away_nsxg_conceded = lag(nsxg_conceded, n = 3),
-         current_away_importance = importance,
-         current_away_spi = spi) %>%
+         lag_3_away_xg_conceded = lag(xg_conceded, n = 3)) %>%
   ungroup() %>%
   na.omit() %>%
   select(match_id, starts_with("lag_"), contains("current"))
@@ -289,13 +243,7 @@ model_dat <- model_dat %>%
          d_3_xg = lag_3_home_xg-lag_3_away_xg,
          d_1_xg_conceded = lag_1_home_xg_conceded-lag_1_away_xg_conceded,
          d_2_xg_conceded = lag_2_home_xg_conceded-lag_2_away_xg_conceded,
-         d_3_xg_conceded = lag_3_home_xg_conceded-lag_3_away_xg_conceded,
-         d_1_spi = lag_1_home_spi-lag_1_away_spi,
-         d_2_spi = lag_2_home_spi-lag_2_away_spi,
-         d_3_spi = lag_3_home_spi-lag_3_away_spi,
-         spi_diff = current_away_spi - current_home_spi,
-         spi_diff_perc = (current_away_spi - current_home_spi)/current_home_spi,
-         imp_diff = current_away_importance - current_home_importance
+         d_3_xg_conceded = lag_3_home_xg_conceded-lag_3_away_xg_conceded
          )
 
 # output for regression model
@@ -312,13 +260,7 @@ regression_dat <- all_data %>%
          d_3_xg = lag_3_home_xg-lag_3_away_xg,
          d_1_xg_conceded = lag_1_home_xg_conceded-lag_1_away_xg_conceded,
          d_2_xg_conceded = lag_2_home_xg_conceded-lag_2_away_xg_conceded,
-         d_3_xg_conceded = lag_3_home_xg_conceded-lag_3_away_xg_conceded,
-         d_1_spi = lag_1_home_spi-lag_1_away_spi,
-         d_2_spi = lag_2_home_spi-lag_2_away_spi,
-         d_3_spi = lag_3_home_spi-lag_3_away_spi,
-         spi_diff = current_away_spi - current_home_spi,
-         spi_diff_perc = (current_away_spi - current_home_spi)/current_home_spi,
-         imp_diff = current_away_importance - current_home_importance
+         d_3_xg_conceded = lag_3_home_xg_conceded-lag_3_away_xg_conceded
   )
 
 # saveRDS(regression_dat, "regression_dat.rds")
@@ -572,12 +514,54 @@ modelFitAC45 <- train(aco45 ~ .,
                       tuneGrid = myTuning_c,
                       verbose=TRUE)
 
+modelFitHC55 <- train(hco55 ~ .,
+                      data=regression_dat %>% 
+                        mutate(hco55 = as.factor(ifelse(hc > 5.5, 1, 0))) %>% 
+                        select(-ac, -hc, -home_corner_winner),
+                      method="gbm",
+                      distribution="bernoulli",
+                      trControl = objControl,
+                      tuneGrid = myTuning_c,
+                      verbose=TRUE)
+
+modelFitAC55 <- train(aco55 ~ .,
+                      data=regression_dat %>% 
+                        mutate(aco55 = as.factor(ifelse(ac > 5.5, 1, 0))) %>% 
+                        select(-ac, -hc, -home_corner_winner),
+                      method="gbm",
+                      trControl = objControl,
+                      tuneGrid = myTuning_c,
+                      verbose=TRUE)
+
+modelFitHC65 <- train(hco65 ~ .,
+                      data=regression_dat %>% 
+                        mutate(hco65 = as.factor(ifelse(hc > 6.5, 1, 0))) %>% 
+                        select(-ac, -hc, -home_corner_winner),
+                      method="gbm",
+                      distribution="bernoulli",
+                      trControl = objControl,
+                      tuneGrid = myTuning_c,
+                      verbose=TRUE)
+
+modelFitAC65 <- train(aco65 ~ .,
+                      data=regression_dat %>% 
+                        mutate(aco65 = as.factor(ifelse(ac > 6.5, 1, 0))) %>% 
+                        select(-ac, -hc, -home_corner_winner),
+                      method="gbm",
+                      trControl = objControl,
+                      tuneGrid = myTuning_c,
+                      verbose=TRUE)
+
 
 saveRDS(modelFitWinner, file = "C:/Users/vi2073/Documents/GitHub/distill_blog/distill_nickzani/scripts/model_xg_2023.RDS")
 saveRDS(modelFitHC, file = "C:/Users/vi2073/Documents/GitHub/distill_blog/distill_nickzani/scripts/model_hc_2023.RDS")
 saveRDS(modelFitAC, file = "C:/Users/vi2073/Documents/GitHub/distill_blog/distill_nickzani/scripts/model_ac_2023.RDS")
 saveRDS(modelFitHC45, file = "C:/Users/vi2073/Documents/GitHub/distill_blog/distill_nickzani/scripts/model_hc45_2023.RDS")
 saveRDS(modelFitAC45, file = "C:/Users/vi2073/Documents/GitHub/distill_blog/distill_nickzani/scripts/model_ac45_2023.RDS")
+saveRDS(modelFitHC55, file = "C:/Users/vi2073/Documents/GitHub/distill_blog/distill_nickzani/scripts/model_hc55_2023.RDS")
+saveRDS(modelFitAC55, file = "C:/Users/vi2073/Documents/GitHub/distill_blog/distill_nickzani/scripts/model_ac55_2023.RDS")
+saveRDS(modelFitHC65, file = "C:/Users/vi2073/Documents/GitHub/distill_blog/distill_nickzani/scripts/model_hc65_2023.RDS")
+saveRDS(modelFitAC65, file = "C:/Users/vi2073/Documents/GitHub/distill_blog/distill_nickzani/scripts/model_ac65_2023.RDS")
 
 ## try with xgboost
 
